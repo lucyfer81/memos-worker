@@ -289,8 +289,11 @@ async function handleSearchRequest(request, env) {
 
 	const db = env.DB;
 	try {
+		// Escape double quotes and wrap in double quotes to handle hyphens and other special characters
+		// This treats the query as a literal phrase prefix.
+		const escapedQuery = query.replace(/"/g, '""');
 		let whereClauses = ["notes_fts MATCH ?"];
-		let bindings = [query + '*'];
+		let bindings = [`"${escapedQuery}"*`];
 		let joinClause = "";
 		if (isFavoritesMode) {
 			whereClauses.push("n.is_favorited = 1");
