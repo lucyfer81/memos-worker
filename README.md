@@ -114,6 +114,18 @@ If you configured the Telegram variables, you need to activate the webhook once.
 	-   **Checked (Default)**: When you save the edit, the note's original timestamp will be preserved. It will **not** jump to the top of your timeline.
 	-   **Unchecked**: When you save, the note's timestamp will be updated to the current time, making it the most recent note.
 
+## 🔍 Rebuilding Search Index (Recommended)
+
+If you are updating from an older version(<20260206) and want to enable searching by **filenames**, you need to rebuild your Full-Text Search (FTS) index.
+
+1.  Go to your Cloudflare Dashboard -> **Workers & Pages** -> **D1**.
+2.  Select your database (e.g., `notes-db`).
+3.  Click on the **Console** tab.
+4.  Copy the entire content of `src/migrate_fts.sql` from this repository and paste it into the console.
+5.  Click **Execute**.
+
+This will update your search index to include filenames and refresh all existing data.
+
 ## 🔧 Development (Wrangler)
 
 ### 1. Local Development (Simulated Environment)
