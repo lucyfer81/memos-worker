@@ -3044,6 +3044,177 @@
   .note.is-long .toggle-content-btn {
 	display: inline-block; /* 当笔记很长时显示按钮 */
   }
+
+  /* 链接系统样式 */
+  .link-decision-panel {
+	position: fixed;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	background: var(--surface-color);
+	border-radius: 8px;
+	box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+	width: 90%;
+	max-width: 600px;
+	max-height: 80vh;
+	overflow-y: auto;
+	z-index: 1000;
+	padding: 20px;
+  }
+
+  .link-decision-panel h2 {
+	margin: 0 0 15px 0;
+	color: var(--text-color);
+  }
+
+  .link-suggestions, .link-recent {
+	margin-bottom: 20px;
+  }
+
+  .link-suggestion-item {
+	padding: 12px;
+	border: 1px solid var(--border-color);
+	border-radius: 6px;
+	margin-bottom: 8px;
+	cursor: pointer;
+	transition: all 0.2s;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+  }
+
+  .link-suggestion-item:hover {
+	background: var(--hover-bg-color);
+  }
+
+  .link-suggestion-item.selected {
+	background: var(--active-bg-color);
+	border-color: var(--primary-color);
+  }
+
+  .link-suggestion-content {
+	flex: 1;
+  }
+
+  .link-suggestion-title {
+	font-weight: 600;
+	color: var(--text-color);
+	margin-bottom: 4px;
+  }
+
+  .link-suggestion-meta {
+	font-size: 0.85em;
+	color: var(--text-secondary);
+  }
+
+  .link-type-select {
+	padding: 4px 8px;
+	border: 1px solid var(--border-color);
+	border-radius: 4px;
+	background: var(--surface-color);
+	color: var(--text-color);
+  }
+
+  .link-search-box {
+	margin-bottom: 15px;
+  }
+
+  .link-search-box input {
+	width: 100%;
+	padding: 10px;
+	border: 1px solid var(--border-color);
+	border-radius: 6px;
+	background: var(--surface-color);
+	color: var(--text-color);
+  }
+
+  .link-selected-count {
+	padding: 10px;
+	background: var(--quote-bg-color);
+	border-left: 3px solid var(--accent-color);
+	margin-bottom: 15px;
+	font-size: 0.9em;
+  }
+
+  .link-decision-buttons {
+	display: flex;
+	gap: 10px;
+	margin-top: 20px;
+  }
+
+  .link-decision-buttons button {
+	flex: 1;
+	padding: 10px;
+	border: none;
+	border-radius: 6px;
+	cursor: pointer;
+	font-weight: 600;
+  }
+
+  .link-btn-inbox {
+	background: #f59e0b;
+	color: white;
+  }
+
+  .link-btn-orphan {
+	background: #6b7280;
+	color: white;
+  }
+
+  .link-btn-save {
+	background: var(--primary-color);
+	color: white;
+  }
+
+  .note-status-pending {
+	border-left: 3px solid #f59e0b;
+  }
+
+  .backlinks-section {
+	margin-top: 15px;
+	padding-top: 15px;
+	border-top: 1px solid var(--border-color);
+  }
+
+  .backlinks-title {
+	font-size: 0.9em;
+	color: var(--text-secondary);
+	margin-bottom: 10px;
+  }
+
+  .backlink-item {
+	padding: 8px;
+	background: var(--hover-bg-color);
+	border-radius: 4px;
+	margin-bottom: 6px;
+	cursor: pointer;
+  }
+
+  .backlink-item:hover {
+	background: var(--active-bg-color);
+  }
+
+  .link-type-badge {
+	display: inline-block;
+	padding: 2px 6px;
+	border-radius: 3px;
+	font-size: 0.75em;
+	margin-left: 6px;
+  }
+
+  .link-type-related { background: #e0f2fe; color: #0369a1; }
+  .link-type-supports { background: #dcfce7; color: #15803d; }
+  .link-type-contradicts { background: #fee2e2; color: #b91c1c; }
+  .link-type-expands { background: #f3e8ff; color: #7c3aed; }
+
+  .toast-warning {
+	background: #fef3c7;
+	color: #92400e;
+	padding: 10px;
+	border-radius: 6px;
+	margin-bottom: 10px;
+	border-left: 3px solid #f59e0b;
+  }
 </style>
 <body class='loading' data-theme='dark'>
 <div id='initial-loader'>
@@ -3811,6 +3982,12 @@
 	const calendarTooltip = document.getElementById('calendar-tooltip'); // 【新增】
 	let notesDataByDate = new Map();
 	let calendarInstance = null;
+
+	// 链接系统状态变量
+	let linkSuggestions = [];
+	let selectedLinks = [];
+	let isLinkDecisionPending = false;
+	let pendingNoteContent = null;
 
 	class Calendar {
 		constructor(container, dataProvider) {
@@ -6376,10 +6553,15 @@
 					const res = await fetch('/api/notes', { method: 'POST', body: formData });
 					if (!res.ok) throw new Error(`Save failed: ${await res.text()}`);
 
+					const note = await res.json();
+
 					noteForm.reset(); // 使用 reset() 可以同時清空文本和文件輸入
 					updateMainFileDisplay(); // 更新主界面的文件列表顯示
 					closeFullscreenEditor();
 					await refreshNotes();
+
+					// 显示关联决策面板
+					showLinkDecisionPanel(note.id, note.content);
 
 				} catch (error) {
 					showCustomAlert(error.message, 'error');
@@ -6529,6 +6711,248 @@
 			toast.classList.remove('visible');
 		}, duration);
 	}
+
+	// ==================== 链接系统核心函数 ====================
+
+	// 获取推荐卡片
+	async function fetchLinkSuggestions(noteId) {
+		try {
+			const response = await fetch(`/api/notes/${noteId}/suggestions`);
+			if (!response.ok) throw new Error('Failed to fetch suggestions');
+			return await response.json();
+		} catch (error) {
+			console.error('Error fetching suggestions:', error);
+			return { similar: [], recent: [] };
+		}
+	}
+
+	// 搜索卡片
+	async function searchNotesForLinking(query, excludeId) {
+		try {
+			const response = await fetch(`/api/notes/search-for-linking?q=${encodeURIComponent(query)}&excludeId=${excludeId}`);
+			if (!response.ok) throw new Error('Search failed');
+			return await response.json();
+		} catch (error) {
+			console.error('Error searching notes:', error);
+			return { suggestions: [], recent: [] };
+		}
+	}
+
+	// 显示关联决策面板
+	function showLinkDecisionPanel(noteId, content) {
+		isLinkDecisionPending = true;
+		pendingNoteContent = { id: noteId, content };
+		selectedLinks = [];
+
+		const panel = document.createElement('div');
+		panel.className = 'link-decision-panel';
+		panel.innerHTML = `
+			<h2>🔗 建立关联关系</h2>
+			<div class="link-suggestions">
+				<h3>💡 相似卡片推荐</h3>
+				<div id="similar-suggestions"></div>
+			</div>
+			<div class="link-recent">
+				<h3>🕐 最近编辑</h3>
+				<div id="recent-suggestions"></div>
+			</div>
+			<div class="link-search-box">
+				<input type="text" id="link-search-input" placeholder="🔍 搜索其他卡片..." />
+				<div id="search-results"></div>
+			</div>
+			<div id="link-selected-count"></div>
+			<div class="link-decision-buttons">
+				<button class="link-btn-inbox" onclick="saveToInbox()">📥 存入收件箱</button>
+				<button class="link-btn-orphan" onclick="saveAsOrphan()">设为新主题起点</button>
+				<button class="link-btn-save" onclick="saveWithLinks()">保存关联并完成</button>
+			</div>
+		`;
+
+		document.body.appendChild(panel);
+		loadSuggestions(noteId);
+
+		const searchInput = document.getElementById('link-search-input');
+		let searchTimeout;
+		searchInput.addEventListener('input', (e) => {
+			clearTimeout(searchTimeout);
+			searchTimeout = setTimeout(() => {
+				if (e.target.value.length >= 2) {
+					performSearch(e.target.value, noteId);
+				}
+			}, 300);
+		});
+	}
+
+	// 加载推荐
+	function loadSuggestions(noteId) {
+		fetchLinkSuggestions(noteId).then(data => {
+			renderSuggestions('similar-suggestions', data.similar, 'similar');
+			renderSuggestions('recent-suggestions', data.recent, 'recent');
+		});
+	}
+
+	// 渲染推荐列表
+	function renderSuggestions(containerId, items, type) {
+		const container = document.getElementById(containerId);
+		if (!items || items.length === 0) {
+			container.innerHTML = '<p style="color: var(--text-secondary);">暂无推荐</p>';
+			return;
+		}
+
+		container.innerHTML = items.map(item => `
+			<div class="link-suggestion-item" data-id="${item.id}" onclick="toggleLinkSelection(${item.id})">
+				<div class="link-suggestion-content">
+					<div class="link-suggestion-title">${escapeHtml(item.content.substring(0, 50))}${item.content.length > 50 ? '...' : ''}</div>
+					<div class="link-suggestion-meta">
+						${type === 'similar' ? `相似度: ${item.common_tags || 'N/A'}` : `最近编辑`}
+					</div>
+				</div>
+				<select class="link-type-select" onclick="event.stopPropagation()">
+					<option value="related">相关</option>
+					<option value="supports">支持</option>
+					<option value="contradicts">反驳</option>
+					<option value="expands">扩展</option>
+				</select>
+			</div>
+		`).join('');
+	}
+
+	// 搜索
+	function performSearch(query, excludeId) {
+		searchNotesForLinking(query, excludeId).then(data => {
+			const container = document.getElementById('search-results');
+			if (data.suggestions.length === 0) {
+				container.innerHTML = '<p style="color: var(--text-secondary);">未找到匹配卡片</p>';
+				return;
+			}
+			container.innerHTML = data.suggestions.map(item => `
+				<div class="link-suggestion-item" data-id="${item.id}" onclick="toggleLinkSelection(${item.id})">
+					<div class="link-suggestion-content">
+						<div class="link-suggestion-title">${escapeHtml(item.content.substring(0, 50))}${item.content.length > 50 ? '...' : ''}</div>
+					</div>
+					<select class="link-type-select" onclick="event.stopPropagation()">
+						<option value="related">相关</option>
+						<option value="supports">支持</option>
+						<option value="contradicts">反驳</option>
+						<option value="expands">扩展</option>
+					</select>
+				</div>
+			`).join('');
+		});
+	}
+
+	// 切换选择
+	function toggleLinkSelection(noteId) {
+		const existingIndex = selectedLinks.findIndex(l => l.toId === noteId);
+		if (existingIndex >= 0) {
+			selectedLinks.splice(existingIndex, 1);
+		} else {
+			if (selectedLinks.length >= 3) {
+				showToast('💡 建议不超过3个关联。多个关联可能表示需要拆分卡片。', 'warning');
+			}
+			selectedLinks.push({ toId: noteId, linkType: 'related' });
+		}
+		updateSelectionUI();
+	}
+
+	// 更新选择UI
+	function updateSelectionUI() {
+		document.querySelectorAll('.link-suggestion-item').forEach(item => {
+			const id = parseInt(item.dataset.id);
+			if (selectedLinks.some(l => l.toId === id)) {
+				item.classList.add('selected');
+			} else {
+				item.classList.remove('selected');
+			}
+		});
+
+		const countEl = document.getElementById('link-selected-count');
+		if (selectedLinks.length > 0) {
+			countEl.innerHTML = `✅ 已选择 ${selectedLinks.length} 个关联`;
+			countEl.style.display = 'block';
+		} else {
+			countEl.style.display = 'none';
+		}
+	}
+
+	// 保存到收件箱
+	async function saveToInbox() {
+		if (!pendingNoteContent) return;
+		try {
+			const response = await fetch(`/api/notes/${pendingNoteContent.id}/status`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ status: 'pending' })
+			});
+			if (!response.ok) throw new Error('Failed to save to inbox');
+			closeLinkDecisionPanel();
+			loadNotes();
+			showToast('✅ 已存入收件箱');
+		} catch (error) {
+			console.error('Error saving to inbox:', error);
+			showToast('❌ 保存失败', 'error');
+		}
+	}
+
+	// 保存为新主题
+	async function saveAsOrphan() {
+		if (!pendingNoteContent) return;
+		try {
+			const response = await fetch(`/api/notes/${pendingNoteContent.id}/status`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ status: 'orphan' })
+			});
+			if (!response.ok) throw new Error('Failed to save as orphan');
+			closeLinkDecisionPanel();
+			loadNotes();
+			showToast('✅ 已保存为新主题');
+		} catch (error) {
+			console.error('Error saving as orphan:', error);
+			showToast('❌ 保存失败', 'error');
+		}
+	}
+
+	// 保存关联
+	async function saveWithLinks() {
+		if (!pendingNoteContent) return;
+		try {
+			selectedLinks.forEach(link => {
+				const item = document.querySelector(`.link-suggestion-item[data-id="${link.toId}"]`);
+				if (item) {
+					const select = item.querySelector('.link-type-select');
+					link.linkType = select.value;
+				}
+			});
+
+			const response = await fetch(`/api/notes/${pendingNoteContent.id}/links`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ links: selectedLinks })
+			});
+			if (!response.ok) throw new Error('Failed to save links');
+			closeLinkDecisionPanel();
+			loadNotes();
+			showToast(`✅ 已创建 ${selectedLinks.length} 个关联`);
+		} catch (error) {
+			console.error('Error saving links:', error);
+			showToast('❌ 保存失败', 'error');
+		}
+	}
+
+	// 关闭面板
+	function closeLinkDecisionPanel() {
+		const panel = document.querySelector('.link-decision-panel');
+		if (panel) {
+			panel.remove();
+		}
+		isLinkDecisionPending = false;
+		pendingNoteContent = null;
+		selectedLinks = [];
+	}
+
+	// ==================== 链接系统核心函数结束 ====================
+
 	// 1. 创建一个函数来计算并设置单个笔记的行跨度
 	const setNoteRowSpan = (noteElement) => {
 		const notesContainer = document.getElementById('notes-container');
@@ -7839,6 +8263,8 @@
 		try {
 			const res = await fetch('/api/notes', { method: 'POST', body: formData });
 			if (!res.ok) throw new Error(`Save error: ${await res.text()}`);
+			const note = await res.json();
+
 			noteForm.reset();
 			mainEditPreview.innerHTML = '';
 			noteForm.classList.remove('preview-mode');
@@ -7846,6 +8272,9 @@
 			autoResizeTextarea(noteInput);
 			updateMainFileDisplay();
 			await refreshNotes();
+
+			// 显示关联决策面板
+			showLinkDecisionPanel(note.id, note.content);
 		} catch (error) {
 			showCustomAlert(error.message, 'error');
 		} finally {
