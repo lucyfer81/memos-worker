@@ -171,6 +171,43 @@ async function handleApiRequest(request, env) {
 		return handleNoteDetail(request, noteId, env);
 	}
 
+	// --- 链接系统 API 路由 ---
+	const linksMatch = pathname.match(/^\/api\/notes\/(\d+)\/links$/);
+	if (linksMatch) {
+		const noteId = linksMatch[1];
+		if (request.method === 'GET') {
+			return handleGetLinks(request, noteId, env);
+		}
+		if (request.method === 'POST') {
+			return handleCreateLinks(request, noteId, env);
+		}
+		if (request.method === 'DELETE') {
+			return handleDeleteLink(request, noteId, env);
+		}
+	}
+
+	const backlinksMatch = pathname.match(/^\/api\/notes\/(\d+)\/backlinks$/);
+	if (backlinksMatch && request.method === 'GET') {
+		const noteId = backlinksMatch[1];
+		return handleGetBacklinks(request, noteId, env);
+	}
+
+	if (pathname === '/api/notes/search-for-linking' && request.method === 'GET') {
+		return handleSearchForLinking(request, env);
+	}
+
+	const linkStatusMatch = pathname.match(/^\/api\/notes\/(\d+)\/status$/);
+	if (linkStatusMatch && request.method === 'PATCH') {
+		const noteId = linkStatusMatch[1];
+		return handleUpdateLinkStatus(request, noteId, env);
+	}
+
+	const suggestionsMatch = pathname.match(/^\/api\/notes\/(\d+)\/suggestions$/);
+	if (suggestionsMatch && request.method === 'GET') {
+		const noteId = suggestionsMatch[1];
+		return handleGetSuggestions(request, noteId, env);
+	}
+
 	if (pathname === '/api/notes') {
 		return handleNotesList(request, env);
 	}
@@ -572,13 +609,13 @@ async function handleNotesList(request, env) {
 				// 【核心修改】在插入数据库前，先提取图片 URL
 				const picUrls = extractImageUrls(content);
 
-				// 【核心修改】在 INSERT 语句中加入新的 pics 字段
+				// 【核心修改】在 INSERT 语句中加入新的 pics 字段和 link_status 字段
 				const insertStmt = db.prepare(
-					"INSERT INTO notes (content, files, is_pinned, created_at, updated_at, pics) VALUES (?, ?, 0, ?, ?, ?) RETURNING id"
+					"INSERT INTO notes (content, files, is_pinned, created_at, updated_at, pics, link_status) VALUES (?, ?, 0, ?, ?, ?, ?) RETURNING id"
 				);
 				// 先用一个空的 files 数组插入
-				// 【核心修改】将提取出的 picUrls 绑定到 SQL 语句中
-				const { id: noteId } = await insertStmt.bind(content, "[]", now, now, picUrls).first();
+				// 【核心修改】将提取出的 picUrls 绑定到 SQL 语句中，并设置 link_status 为 'pending'
+				const { id: noteId } = await insertStmt.bind(content, "[]", now, now, picUrls, 'pending').first();
 				if (!noteId) {
 					throw new Error("Failed to create note and get ID.");
 				}
@@ -2015,6 +2052,291 @@ async function handleMergeNotes(request, env) {
 	} catch (e) {
 		console.error("Merge Notes Error:", e.message, e.cause);
 		return jsonResponse({ error: 'Database or R2 error during merge', message: e.message }, 500);
+	}
+}
+
+/**
+ * 获取卡片的所有标签
+ */
+async function getNoteTags(noteId, db) {
+	const { results } = await db.prepare(`
+		SELECT t.name FROM tags t
+		JOIN note_tags nt ON t.id = nt.tag_id
+		WHERE nt.note_id = ?
+	`).bind(noteId).all();
+	return results.map(r => r.name);
+}
+
+/**
+ * 计算并返回相似卡片推荐
+ */
+async function findSimilarNotes(noteId, db, limit = 5) {
+	const note = await db.prepare("SELECT id, content FROM notes WHERE id = ?").bind(noteId).first();
+	if (!note) return [];
+
+	const noteTags = await getNoteTags(noteId, db);
+
+	let query = `
+		SELECT n.id, n.content,
+			   COUNT(nt.tag_id) as common_tags
+		FROM notes n
+		JOIN note_tags nt ON n.id = nt.note_id
+		WHERE n.id != ? AND n.link_status != 'pending'
+	`;
+	const params = [noteId];
+
+	if (noteTags.length > 0) {
+		query += ` AND nt.tag_id IN (${noteTags.map(() => '?').join(',')})`;
+		params.push(...noteTags);
+	}
+
+	query += `
+		GROUP BY n.id
+		ORDER BY common_tags DESC, n.updated_at DESC
+		LIMIT ?
+	`;
+	params.push(limit);
+
+	const { results } = await db.prepare(query).bind(...params).all();
+	return results;
+}
+
+/**
+ * 获取最近编辑的卡片
+ */
+async function getRecentNotes(noteId, db, limit = 5) {
+	const { results } = await db.prepare(`
+		SELECT id, content, updated_at
+		FROM notes
+		WHERE id != ? AND link_status != 'pending'
+		ORDER BY updated_at DESC
+		LIMIT ?
+	`).bind(noteId, limit).all();
+	return results;
+}
+
+/**
+ * 搜索卡片用于关联
+ */
+async function handleSearchForLinking(request, env) {
+	const db = env.DB;
+	const { searchParams } = new URL(request.url);
+	const query = searchParams.get('q');
+	const excludeId = searchParams.get('excludeId');
+	const limit = parseInt(searchParams.get('limit') || '10');
+
+	if (!query || query.trim().length < 2) {
+		return jsonResponse({ suggestions: [], recent: [] });
+	}
+
+	try {
+		const { results: suggestions } = await db.prepare(`
+			SELECT id, content, updated_at
+			FROM notes
+			WHERE id != ? AND link_status != 'pending'
+			  AND (content LIKE ? OR id IN (
+				SELECT note_id FROM note_tags nt
+				JOIN tags t ON nt.tag_id = t.id
+				WHERE t.name LIKE ?
+			  ))
+			ORDER BY updated_at DESC
+			LIMIT ?
+		`).bind(excludeId, `%${query}%`, `%${query}%`, limit).all();
+
+		const recent = await getRecentNotes(excludeId, db, 5);
+
+		return jsonResponse({ suggestions, recent });
+	} catch (e) {
+		console.error("Search for Linking Error:", e.message);
+		return jsonResponse({ error: 'Database Error', message: e.message }, 500);
+	}
+}
+
+/**
+ * 获取卡片的所有出站链接
+ */
+async function handleGetLinks(request, noteId, env) {
+	const db = env.DB;
+	const id = parseInt(noteId);
+
+	if (isNaN(id)) {
+		return jsonResponse({ error: 'Invalid Note ID' }, 400);
+	}
+
+	try {
+		const { results } = await db.prepare(`
+			SELECT nl.id, nl.to_id as toId, n.content as toTitle,
+				   nl.link_type as linkType, nl.created_at as createdAt
+			FROM note_links nl
+			JOIN notes n ON nl.to_id = n.id
+			WHERE nl.from_id = ?
+			ORDER BY nl.created_at DESC
+		`).bind(id).all();
+
+		return jsonResponse({ links: results });
+	} catch (e) {
+		console.error("Get Links Error:", e.message);
+		return jsonResponse({ error: 'Database Error', message: e.message }, 500);
+	}
+}
+
+/**
+ * 获取卡片的反向链接
+ */
+async function handleGetBacklinks(request, noteId, env) {
+	const db = env.DB;
+	const id = parseInt(noteId);
+
+	if (isNaN(id)) {
+		return jsonResponse({ error: 'Invalid Note ID' }, 400);
+	}
+
+	try {
+		const { results } = await db.prepare(`
+			SELECT nl.id, nl.from_id as fromId, n.content as fromTitle,
+				   nl.link_type as linkType, nl.created_at as createdAt
+			FROM note_links nl
+			JOIN notes n ON nl.from_id = n.id
+			WHERE nl.to_id = ?
+			ORDER BY nl.created_at DESC
+		`).bind(id).all();
+
+		return jsonResponse({ backlinks: results });
+	} catch (e) {
+		console.error("Get Backlinks Error:", e.message);
+		return jsonResponse({ error: 'Database Error', message: e.message }, 500);
+	}
+}
+
+/**
+ * 创建链接
+ */
+async function handleCreateLinks(request, noteId, env) {
+	const db = env.DB;
+	const fromId = parseInt(noteId);
+
+	if (isNaN(fromId)) {
+		return jsonResponse({ error: 'Invalid Note ID' }, 400);
+	}
+
+	try {
+		const { links } = await request.json();
+
+		if (!Array.isArray(links) || links.length === 0) {
+			return jsonResponse({ error: 'Links array is required' }, 400);
+		}
+
+		const now = Date.now();
+		const createdLinks = [];
+
+		for (const link of links) {
+			const { toId, linkType = 'related' } = link;
+
+			if (!toId || toId === fromId) continue;
+
+			try {
+				const stmt = db.prepare(`
+					INSERT INTO note_links (from_id, to_id, link_type, created_at)
+					VALUES (?, ?, ?, ?)
+					ON CONFLICT(from_id, to_id) DO UPDATE SET
+						link_type = excluded.link_type,
+						created_at = excluded.created_at
+					RETURNING id, to_id, link_type
+				`);
+
+				const result = await stmt.bind(fromId, toId, linkType, now).first();
+				if (result) {
+					createdLinks.push(result);
+				}
+			} catch (e) {
+				if (!e.message.includes('UNIQUE')) {
+					throw e;
+				}
+			}
+		}
+
+		return jsonResponse({ success: true, links: createdLinks });
+	} catch (e) {
+		console.error("Create Links Error:", e.message);
+		return jsonResponse({ error: 'Database Error', message: e.message }, 500);
+	}
+}
+
+/**
+ * 删除链接
+ */
+async function handleDeleteLink(request, noteId, env) {
+	const db = env.DB;
+	const fromId = parseInt(noteId);
+	const { searchParams } = new URL(request.url);
+	const toId = parseInt(searchParams.get('toId'));
+
+	if (isNaN(fromId) || isNaN(toId)) {
+		return jsonResponse({ error: 'Invalid Note ID' }, 400);
+	}
+
+	try {
+		await db.prepare(`
+			DELETE FROM note_links WHERE from_id = ? AND to_id = ?
+		`).bind(fromId, toId).run();
+
+		return jsonResponse({ success: true });
+	} catch (e) {
+		console.error("Delete Link Error:", e.message);
+		return jsonResponse({ error: 'Database Error', message: e.message }, 500);
+	}
+}
+
+/**
+ * 更新卡片链接状态
+ */
+async function handleUpdateLinkStatus(request, noteId, env) {
+	const db = env.DB;
+	const id = parseInt(noteId);
+
+	if (isNaN(id)) {
+		return jsonResponse({ error: 'Invalid Note ID' }, 400);
+	}
+
+	try {
+		const { status } = await request.json();
+
+		if (!['pending', 'linked', 'orphan'].includes(status)) {
+			return jsonResponse({ error: 'Invalid status value' }, 400);
+		}
+
+		await db.prepare(`
+			UPDATE notes SET link_status = ? WHERE id = ?
+		`).bind(status, id).run();
+
+		return jsonResponse({ success: true });
+	} catch (e) {
+		console.error("Update Link Status Error:", e.message);
+		return jsonResponse({ error: 'Database Error', message: e.message }, 500);
+	}
+}
+
+/**
+ * 获取相似卡片推荐
+ */
+async function handleGetSuggestions(request, noteId, env) {
+	const db = env.DB;
+	const id = parseInt(noteId);
+
+	if (isNaN(id)) {
+		return jsonResponse({ error: 'Invalid Note ID' }, 400);
+	}
+
+	try {
+		const [similar, recent] = await Promise.all([
+			findSimilarNotes(id, db, 5),
+			getRecentNotes(id, db, 5)
+		]);
+
+		return jsonResponse({ similar, recent });
+	} catch (e) {
+		console.error("Get Suggestions Error:", e.message);
+		return jsonResponse({ error: 'Database Error', message: e.message }, 500);
 	}
 }
 
