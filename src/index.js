@@ -680,6 +680,10 @@ async function handleNoteDetail(request, noteId, env) {
 		}
 
 		switch (request.method) {
+			case 'GET': {
+				// 返回笔记详情
+				return jsonResponse(existingNote);
+			}
 			case 'PUT': {
 				const formData = await request.formData();
 				const shouldUpdateTimestamp = formData.get('update_timestamp') !== 'false';
