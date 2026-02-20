@@ -165,13 +165,8 @@ async function handleApiRequest(request, env) {
 	if (pathname === '/api/search') {
 		return handleSearchRequest(request, env);
 	}
-	const noteDetailMatch = pathname.match(/^\/api\/notes\/([^\/]+)$/);
-	if (noteDetailMatch) {
-		const noteId = noteDetailMatch[1];
-		return handleNoteDetail(request, noteId, env);
-	}
 
-	// --- 链接系统 API 路由 ---
+	// --- 链接系统 API 路由 (必须在 noteDetailMatch 之前) ---
 	const linksMatch = pathname.match(/^\/api\/notes\/(\d+)\/links$/);
 	if (linksMatch) {
 		const noteId = linksMatch[1];
@@ -206,6 +201,13 @@ async function handleApiRequest(request, env) {
 	if (suggestionsMatch && request.method === 'GET') {
 		const noteId = suggestionsMatch[1];
 		return handleGetSuggestions(request, noteId, env);
+	}
+
+	// 笔记详情路由 (必须在子路径路由之后)
+	const noteDetailMatch = pathname.match(/^\/api\/notes\/([^\/]+)$/);
+	if (noteDetailMatch) {
+		const noteId = noteDetailMatch[1];
+		return handleNoteDetail(request, noteId, env);
 	}
 
 	if (pathname === '/api/notes') {
