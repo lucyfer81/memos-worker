@@ -21,3 +21,7 @@ preview_id = ""
 binding = "NOTES_R2_BUCKET"
 bucket_name = "memos-r2-bucket"
 preview_bucket_name = "notes-files-preview"
+
+[vars]
+USERNAME = "admin"
+PASSWORD = "test123"
