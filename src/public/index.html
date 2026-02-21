@@ -6924,7 +6924,7 @@
 			if (!updateResponse.ok) throw new Error('Failed to update note');
 
 			closeLinkDecisionPanel();
-			loadNotes();
+			reloadNotes();
 			showToast('✅ 已存入收件箱（添加 #inbox 标签）');
 		} catch (error) {
 			console.error('Error saving to inbox:', error);
@@ -6943,7 +6943,7 @@
 			});
 			if (!response.ok) throw new Error('Failed to save as orphan');
 			closeLinkDecisionPanel();
-			loadNotes();
+			reloadNotes();
 			showToast('✅ 已保存为新主题');
 		} catch (error) {
 			console.error('Error saving as orphan:', error);
@@ -6970,7 +6970,7 @@
 			});
 			if (!response.ok) throw new Error('Failed to save links');
 			closeLinkDecisionPanel();
-			loadNotes();
+			reloadNotes();
 			showToast(`✅ 已创建 ${selectedLinks.length} 个关联`);
 		} catch (error) {
 			console.error('Error saving links:', error);

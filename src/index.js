@@ -685,11 +685,14 @@ async function handleNoteDetail(request, noteId, env) {
 				return jsonResponse(existingNote);
 			}
 			case 'PUT': {
+				console.log('[DEBUG handleNoteDetail PUT] START for note', id);
 				const formData = await request.formData();
 				const shouldUpdateTimestamp = formData.get('update_timestamp') !== 'false';
 
 				if (formData.has('content')) {
+					console.log('[DEBUG] has content field');
 					const content = formData.get('content')?.toString() ?? existingNote.content;
+					console.log('[DEBUG] content length:', content.length);
 					let currentFiles = existingNote.files;
 
 					// --- 现在的文件处理只关心非图片附件 ---
@@ -733,8 +736,11 @@ async function handleNoteDetail(request, noteId, env) {
 					const stmt = db.prepare(
 						"UPDATE notes SET content = ?, files = ?, updated_at = ?, pics = ? WHERE id = ?"
 					);
+					console.log('[DEBUG] updating note in database...');
 					await stmt.bind(content, JSON.stringify(currentFiles), newTimestamp, picUrls, id).run();
+					console.log('[DEBUG] note updated, now processing tags...');
 					await processNoteTags(db, id, content);
+					console.log('[DEBUG] tags processed');
 				}
 
 				if (formData.has('isPinned')) { // --- 这是置顶状态的更新 ---
@@ -753,10 +759,12 @@ async function handleNoteDetail(request, noteId, env) {
 					await stmt.bind(isArchived, id).run();
 				}
 
+				console.log('[DEBUG] fetching updated note...');
 				const updatedNote = await db.prepare("SELECT * FROM notes WHERE id = ?").bind(id).first();
 				if (typeof updatedNote.files === 'string') {
 					updatedNote.files = JSON.parse(updatedNote.files);
 				}
+				console.log('[DEBUG handleNoteDetail PUT] END returning note');
 				return jsonResponse(updatedNote);
 			}
 
@@ -800,7 +808,13 @@ async function handleNoteDetail(request, noteId, env) {
 			}
 		}
 	} catch (e) {
-		console.error("D1 Error:", e.message, e.cause);
+		console.error('========================================');
+		console.error('[DEBUG handleNoteDetail ERROR] for note', id);
+		console.error('Error type:', e.constructor.name);
+		console.error('Error message:', e.message);
+		console.error('Error cause:', e.cause);
+		console.error('Error stack:', e.stack);
+		console.error('========================================');
 		return jsonResponse({ error: 'Database Error', message: e.message }, 500);
 	}
 }
@@ -1254,12 +1268,15 @@ function extractImageUrls(content) {
  * 处理笔记的标签逻辑，过滤掉 URL 中的 #
  */
 async function processNoteTags(db, noteId, content) {
+	console.log('[DEBUG processNoteTags] START for note', noteId);
+	console.log('[DEBUG] content length:', content.length);
+
 	const plainTextContent = content.replace(/<[^>]*>/g, '');
 	// 1. 定义两个正则表达式：一个用于标签，一个用于 URL
 	const tagRegex = /#([\p{L}\p{N}_-]+)/gu;
 	const urlRegex = /(https?:\/\/[^\s"']*[^\s"'.?,!])/g;
 
-	// 2. 将内容分割成“普通文本”和“链接文本”的交替数组
+	// 2. 将内容分割成"普通文本"和"链接文本"的交替数组
 	const segments = plainTextContent.split(urlRegex);
 	let allTags = [];
 
@@ -1275,25 +1292,37 @@ async function processNoteTags(db, noteId, content) {
 
 	// 5. 将从所有安全片段中找到的标签进行去重
 	const uniqueTags = [...new Set(allTags)];
+	console.log('[DEBUG] uniqueTags found:', uniqueTags.length, uniqueTags);
 
 	const statements = [];
 	statements.push(db.prepare("DELETE FROM note_tags WHERE note_id = ?").bind(noteId));
+	console.log('[DEBUG] prepared DELETE statement');
 
 	if (uniqueTags.length > 0) {
+		console.log('[DEBUG] processing', uniqueTags.length, 'tags');
 		for (const tagName of uniqueTags) {
+			console.log('[DEBUG] processing tag:', tagName);
 			await db.prepare("INSERT OR IGNORE INTO tags (name) VALUES (?)").bind(tagName).run();
 			const tag = await db.prepare("SELECT id FROM tags WHERE name = ?").bind(tagName).first();
+			console.log('[DEBUG] tag record:', tag);
 			if (tag) {
 				statements.push(
 					db.prepare("INSERT OR IGNORE INTO note_tags (note_id, tag_id) VALUES (?, ?)")
 						.bind(noteId, tag.id)
 				);
+			} else {
+				console.error('[DEBUG ERROR] tag not found after INSERT:', tagName);
 			}
 		}
 	}
+
+	console.log('[DEBUG] total statements:', statements.length);
+	console.log('[DEBUG] executing batch...');
 	if (statements.length > 0) {
 		await db.batch(statements);
+		console.log('[DEBUG] batch executed successfully');
 	}
+	console.log('[DEBUG processNoteTags] END for note', noteId);
 }
 /**
  * 处理独立的图片上传请求 (从粘贴操作)
