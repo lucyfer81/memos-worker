@@ -174,3 +174,8 @@ dist
 /.idea/codeStyles/Project.xml
 /.idea/inspectionProfiles/Project_Default.xml
 /.idea/vcs.xml
+
+# Local notes/instructions
+AGENT.md
+CLAUDE.md
+DEBUG_TEST_INSTRUCTIONS.md
