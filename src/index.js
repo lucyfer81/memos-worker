@@ -197,6 +197,17 @@ async function handleApiRequest(request, env) {
 		return handleUpdateLinkStatus(request, noteId, env);
 	}
 
+	const inboxMatch = pathname.match(/^\/api\/notes\/(\d+)\/inbox$/);
+	if (inboxMatch) {
+		const noteId = inboxMatch[1];
+		if (request.method === 'POST') {
+			return handleSetInboxStatus(noteId, true, env);
+		}
+		if (request.method === 'DELETE') {
+			return handleSetInboxStatus(noteId, false, env);
+		}
+	}
+
 	const suggestionsMatch = pathname.match(/^\/api\/notes\/(\d+)\/suggestions$/);
 	if (suggestionsMatch && request.method === 'GET') {
 		const noteId = suggestionsMatch[1];
@@ -2318,6 +2329,68 @@ async function handleDeleteLink(request, noteId, env) {
 		return jsonResponse({ success: true });
 	} catch (e) {
 		console.error("Delete Link Error:", e.message);
+		return jsonResponse({ error: 'Database Error', message: e.message }, 500);
+	}
+}
+
+function hasInboxTag(content = '') {
+	return /(^|\s)#inbox\b/i.test(content);
+}
+
+function addInboxTagToContent(content = '') {
+	if (hasInboxTag(content)) {
+		return content;
+	}
+	const trimmed = content.trimEnd();
+	return trimmed ? `${trimmed}\n\n#inbox` : '#inbox';
+}
+
+function removeInboxTagFromContent(content = '') {
+	let updated = content.replace(/(^|\s)#inbox\b/gi, '$1');
+	updated = updated.replace(/[ \t]+\n/g, '\n');
+	updated = updated.replace(/\n{3,}/g, '\n\n');
+	return updated.trimEnd();
+}
+
+async function handleSetInboxStatus(noteId, inInbox, env) {
+	const db = env.DB;
+	const id = parseInt(noteId);
+
+	if (isNaN(id)) {
+		return jsonResponse({ error: 'Invalid Note ID' }, 400);
+	}
+
+	try {
+		const note = await db.prepare("SELECT id, content, updated_at, link_status FROM notes WHERE id = ?").bind(id).first();
+		if (!note) {
+			return jsonResponse({ error: 'Note not found' }, 404);
+		}
+
+		const nextContent = inInbox
+			? addInboxTagToContent(note.content || '')
+			: removeInboxTagFromContent(note.content || '');
+		const nextStatus = inInbox ? 'pending' : note.link_status;
+
+		const contentChanged = nextContent !== (note.content || '');
+		const statusChanged = nextStatus !== note.link_status;
+
+		if (!contentChanged && !statusChanged) {
+			return jsonResponse({ success: true, changed: false, linkStatus: note.link_status });
+		}
+
+		await db.prepare(`
+			UPDATE notes
+			SET content = ?, link_status = ?, updated_at = ?
+			WHERE id = ?
+		`).bind(nextContent, nextStatus, note.updated_at, id).run();
+
+		if (contentChanged) {
+			await processNoteTags(db, id, nextContent);
+		}
+
+		return jsonResponse({ success: true, changed: true, linkStatus: nextStatus });
+	} catch (e) {
+		console.error("Set Inbox Status Error:", e.message);
 		return jsonResponse({ error: 'Database Error', message: e.message }, 500);
 	}
 }

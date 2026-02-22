@@ -3166,6 +3166,21 @@
 	color: white;
   }
 
+  .force-link-btn {
+	background: #f59e0b;
+	color: #fff;
+	border: none;
+	border-radius: 6px;
+	padding: 4px 8px;
+	font-size: 12px;
+	font-weight: 700;
+	cursor: pointer;
+  }
+
+  .force-link-btn:hover {
+	filter: brightness(0.95);
+  }
+
   .note-status-pending {
 	border-left: 3px solid #f59e0b;
   }
@@ -3920,6 +3935,12 @@
 	// --- 配置 marked.js ---
 	const renderer = new marked.Renderer();
 	const NOTE_TRUNCATE_LENGTH = 800; // 笔记折叠的字数阈值
+	const escapeHtml = (str = '') => String(str)
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#39;');
 	const originalTableRenderer = renderer.table.bind(renderer);
 	const originalLinkRenderer = renderer.link.bind(renderer);
 	renderer.table = (header, body) => {
@@ -3937,10 +3958,6 @@
 		}
 		const languageName = result.language || 'plaintext';
 		const highlightedCode = result.value;
-		const escapeHtml = (str) => {
-			return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-		};
-
 		const copyButtonHtml = `
 							<button class='copy-code-btn' data-code='${escapeHtml(code)}' title='Copy code'>
 									<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect x='9' y='9' width='13' height='13' rx='2' ry='2'></rect><path d='M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1'></path></svg>
@@ -3991,6 +4008,8 @@
 	let selectedLinks = [];
 	let isLinkDecisionPending = false;
 	let pendingNoteContent = null;
+	let isAutoInboxFlushing = false;
+	const PENDING_LINK_DECISION_STORAGE_KEY = 'pending-link-decision-note-id';
 
 	class Calendar {
 		constructor(container, dataProvider) {
@@ -4808,16 +4827,11 @@
 				break;
 			}
 			case 'link': {
-				// 显示关联决策面板
-				try {
-					const noteResponse = await fetch(`/api/notes/${noteId}`);
-					if (!noteResponse.ok) throw new Error('Failed to fetch note');
-					const note = await noteResponse.json();
-					showLinkDecisionPanel(noteId, note.content);
-				} catch (error) {
-					console.error('Error opening link panel:', error);
-					showToast('❌ 无法打开关联面板', 'error');
-				}
+				const noteData = allNotesCache.find(n => n.id === parseInt(noteId, 10));
+				const reminder = noteData?.link_status === 'pending'
+					? '该卡片仍在收件箱，请尽快完成关联决策。'
+					: '';
+				await openLinkDecisionPanelForNote(noteId, reminder);
 				break;
 			}
 			case 'delete': {
@@ -5358,18 +5372,22 @@
 				renderNotes(data.notes);
 				appState.pagination.hasMore = data.hasMore;
 				appState.pagination.currentPage = 1;
-
-				// 处理加载更多的UI
-				if (!data.hasMore) {
-					if (allNotesCache.length > 0) {
-						scrollLoader.textContent = 'No more notes.';
-						scrollLoader.style.display = 'block';
-					} else {
-						notesContainer.innerHTML = '<div style="text-align: center; color: var(--text-secondary); padding: 1rem 0;">Nothing here yet.</div>';
-						scrollLoader.style.display = 'none';
+				const recoveredPendingDecision = await recoverPendingLinkDecisionIfNeeded();
+				if (recoveredPendingDecision) {
+					await fetchNotes(1);
+				} else {
+					// 处理加载更多的UI
+					if (!data.hasMore) {
+						if (allNotesCache.length > 0) {
+							scrollLoader.textContent = 'No more notes.';
+							scrollLoader.style.display = 'block';
+						} else {
+							notesContainer.innerHTML = '<div style="text-align: center; color: var(--text-secondary); padding: 1rem 0;">Nothing here yet.</div>';
+							scrollLoader.style.display = 'none';
+						}
 					}
 				}
-			}  else if (response.status === 401) {
+			} else if (response.status === 401) {
 				// 如果 session 无效或不存在，显示登录界面
 				showLoginScreen();
 			} else {
@@ -6736,6 +6754,130 @@
 
 	// ==================== 链接系统核心函数 ====================
 
+	async function setNoteInboxStatus(noteId, inInbox) {
+		const method = inInbox ? 'POST' : 'DELETE';
+		const options = {
+			method,
+			headers: { 'Content-Type': 'application/json' }
+		};
+		if (method === 'POST') {
+			options.body = '{}';
+		}
+		const response = await fetch(`/api/notes/${noteId}/inbox`, options);
+		if (!response.ok) {
+			throw new Error(inInbox ? 'Failed to move note to inbox' : 'Failed to remove inbox tag');
+		}
+		return response.json();
+	}
+
+	async function openLinkDecisionPanelForNote(noteId, reminderMessage = '') {
+		try {
+			const noteResponse = await fetch(`/api/notes/${noteId}`);
+			if (!noteResponse.ok) throw new Error('Failed to fetch note');
+			const note = await noteResponse.json();
+			showLinkDecisionPanel(noteId, note.content);
+			if (reminderMessage) {
+				showToast(reminderMessage, 'warning', 4500);
+			}
+		} catch (error) {
+			console.error('Error opening link panel:', error);
+			showToast('❌ 无法打开关联面板', 'error');
+		}
+	}
+
+	function rememberPendingLinkDecision(noteId) {
+		try {
+			localStorage.setItem(PENDING_LINK_DECISION_STORAGE_KEY, String(noteId));
+		} catch (e) {
+			console.warn('Failed to persist pending link decision:', e);
+		}
+	}
+
+	function clearPendingLinkDecision() {
+		try {
+			localStorage.removeItem(PENDING_LINK_DECISION_STORAGE_KEY);
+		} catch (e) {
+			console.warn('Failed to clear pending link decision:', e);
+		}
+	}
+
+	async function recoverPendingLinkDecisionIfNeeded() {
+		let pendingNoteId = null;
+		try {
+			pendingNoteId = localStorage.getItem(PENDING_LINK_DECISION_STORAGE_KEY);
+		} catch (e) {
+			console.warn('Failed to read pending link decision:', e);
+			return false;
+		}
+
+		if (!pendingNoteId) {
+			return false;
+		}
+
+		const noteId = parseInt(pendingNoteId, 10);
+		if (isNaN(noteId)) {
+			clearPendingLinkDecision();
+			return false;
+		}
+
+		try {
+			const noteResponse = await fetch(`/api/notes/${noteId}`);
+			if (!noteResponse.ok) {
+				return false;
+			}
+			const note = await noteResponse.json();
+			if (note.link_status !== 'pending') {
+				return false;
+			}
+			await setNoteInboxStatus(noteId, true);
+			showToast('已恢复上次未完成的关联决策：卡片已转入收件箱。', 'warning', 5000);
+			return true;
+		} catch (e) {
+			console.warn('Failed to recover pending note into inbox:', e);
+			return false;
+		} finally {
+			clearPendingLinkDecision();
+		}
+	}
+
+	function flushPendingDecisionToInbox() {
+		if (!isLinkDecisionPending || !pendingNoteContent || isAutoInboxFlushing) {
+			return;
+		}
+
+		isAutoInboxFlushing = true;
+		const noteId = pendingNoteContent.id;
+		const endpoint = `/api/notes/${noteId}/inbox`;
+		rememberPendingLinkDecision(noteId);
+
+		try {
+			if (navigator.sendBeacon) {
+				const payload = new Blob([JSON.stringify({ source: 'auto-beforeunload' })], { type: 'application/json' });
+				navigator.sendBeacon(endpoint, payload);
+			} else {
+				fetch(endpoint, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: '{}',
+					keepalive: true
+				}).catch(() => {});
+			}
+		} catch (error) {
+			fetch(endpoint, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: '{}',
+				keepalive: true
+			}).catch(() => {});
+		}
+
+		setTimeout(() => {
+			if (isLinkDecisionPending) {
+				isAutoInboxFlushing = false;
+			}
+		}, 2000);
+	}
+
 	// 获取推荐卡片
 	async function fetchLinkSuggestions(noteId) {
 		try {
@@ -6762,9 +6904,16 @@
 
 	// 显示关联决策面板
 	function showLinkDecisionPanel(noteId, content) {
+		const existingPanel = document.querySelector('.link-decision-panel');
+		if (existingPanel) {
+			existingPanel.remove();
+		}
+
 		isLinkDecisionPending = true;
+		isAutoInboxFlushing = false;
 		pendingNoteContent = { id: noteId, content };
 		selectedLinks = [];
+		rememberPendingLinkDecision(noteId);
 
 		const panel = document.createElement('div');
 		panel.className = 'link-decision-panel';
@@ -6900,32 +7049,12 @@
 	// 保存到收件箱（自动添加 #inbox 标签）
 	async function saveToInbox() {
 		if (!pendingNoteContent) return;
+		const noteId = pendingNoteContent.id;
 		try {
-			// 先获取当前笔记内容
-			const noteResponse = await fetch(`/api/notes/${pendingNoteContent.id}`);
-			if (!noteResponse.ok) throw new Error('Failed to fetch note');
-			const note = await noteResponse.json();
-
-			// 添加 #inbox 标签（如果还没有）
-			const newContent = note.content.includes('#inbox')
-				? note.content
-				: note.content.trim() + '\n\n#inbox';
-
-			// 使用 FormData 更新笔记
-			const formData = new FormData();
-			formData.append('content', newContent);
-			formData.append('update_timestamp', 'false');
-
-			const updateResponse = await fetch(`/api/notes/${pendingNoteContent.id}`, {
-				method: 'PUT',
-				body: formData
-			});
-
-			if (!updateResponse.ok) throw new Error('Failed to update note');
-
+			await setNoteInboxStatus(noteId, true);
 			closeLinkDecisionPanel();
 			reloadNotes();
-			showToast('✅ 已存入收件箱（添加 #inbox 标签）');
+			showToast('✅ 已存入收件箱，后续打开会继续提醒关联');
 		} catch (error) {
 			console.error('Error saving to inbox:', error);
 			showToast('❌ 保存失败', 'error');
@@ -6935,13 +7064,15 @@
 	// 保存为新主题
 	async function saveAsOrphan() {
 		if (!pendingNoteContent) return;
+		const noteId = pendingNoteContent.id;
 		try {
-			const response = await fetch(`/api/notes/${pendingNoteContent.id}/status`, {
+			const response = await fetch(`/api/notes/${noteId}/status`, {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ status: 'orphan' })
 			});
 			if (!response.ok) throw new Error('Failed to save as orphan');
+			await setNoteInboxStatus(noteId, false);
 			closeLinkDecisionPanel();
 			reloadNotes();
 			showToast('✅ 已保存为新主题');
@@ -6952,31 +7083,40 @@
 	}
 
 	// 保存关联
-	async function saveWithLinks() {
-		if (!pendingNoteContent) return;
-		try {
-			selectedLinks.forEach(link => {
-				const item = document.querySelector(`.link-suggestion-item[data-id="${link.toId}"]`);
-				if (item) {
-					const select = item.querySelector('.link-type-select');
-					link.linkType = select.value;
-				}
-			});
+		async function saveWithLinks() {
+			if (!pendingNoteContent) return;
+			const noteId = pendingNoteContent.id;
+			if (selectedLinks.length === 0) {
+				showToast('请至少关联 1 条卡片，或选择“设为新主题起点 / 存入收件箱”', 'warning', 4500);
+				return;
+			}
+			try {
+				const linksToSave = selectedLinks.map(link => ({ ...link }));
+				linksToSave.forEach(link => {
+					const item = document.querySelector(`.link-suggestion-item[data-id="${link.toId}"]`);
+					if (item) {
+						const select = item.querySelector('.link-type-select');
+						link.linkType = select.value;
+					}
+				});
 
-			const response = await fetch(`/api/notes/${pendingNoteContent.id}/links`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ links: selectedLinks })
-			});
-			if (!response.ok) throw new Error('Failed to save links');
-			closeLinkDecisionPanel();
-			reloadNotes();
-			showToast(`✅ 已创建 ${selectedLinks.length} 个关联`);
-		} catch (error) {
-			console.error('Error saving links:', error);
-			showToast('❌ 保存失败', 'error');
+				const response = await fetch(`/api/notes/${noteId}/links`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ links: linksToSave })
+				});
+				if (!response.ok) throw new Error('Failed to save links');
+				const result = await response.json().catch(() => ({}));
+				const linkedCount = Array.isArray(result.links) ? result.links.length : linksToSave.length;
+				await setNoteInboxStatus(noteId, false);
+				closeLinkDecisionPanel();
+				reloadNotes();
+				showToast(`✅ 已创建 ${linkedCount} 个关联`);
+			} catch (error) {
+				console.error('Error saving links:', error);
+				showToast('❌ 保存失败', 'error');
+			}
 		}
-	}
 
 	// 关闭面板
 	function closeLinkDecisionPanel() {
@@ -6987,7 +7127,22 @@
 		isLinkDecisionPending = false;
 		pendingNoteContent = null;
 		selectedLinks = [];
+		isAutoInboxFlushing = false;
+		clearPendingLinkDecision();
 	}
+
+	window.addEventListener('beforeunload', (event) => {
+		if (!isLinkDecisionPending || !pendingNoteContent) {
+			return;
+		}
+		flushPendingDecisionToInbox();
+		event.preventDefault();
+		event.returnValue = '';
+	});
+
+	window.addEventListener('pagehide', () => {
+		flushPendingDecisionToInbox();
+	});
 
 	// ==================== 链接系统核心函数结束 ====================
 
@@ -7792,6 +7947,9 @@
 
 		const noteElement = document.createElement('div');
 		noteElement.className = 'note';
+		if (note.link_status === 'pending') {
+			noteElement.classList.add('note-status-pending');
+		}
 
 		if (isLongContent) {
 			noteElement.classList.add('is-long');
@@ -7814,6 +7972,9 @@
 						</svg>
 				</button>
 		` : '';
+		const forceLinkButtonHTML = note.link_status === 'pending'
+			? `<button class='force-link-btn' data-action='force-link' title='该卡片必须先处理关联'>强制关联</button>`
+			: '';
 		let attachmentsHTML = '';
 		if (note.files && note.files.length > 0) {
 			attachmentsHTML += '<div class="attachments-grid">';
@@ -7862,6 +8023,7 @@
 									</div>
 											<div class='note-actions view-mode'>
 													${pinnedIconHTML}
+													${forceLinkButtonHTML}
 													<button class='edit icon-btn' title='Edit'>
 															<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='currentColor'><path d='M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z'></path></svg>
 													</button>
@@ -8521,14 +8683,24 @@
 		const noteElement = target.closest('.note');
 		if (!noteElement) return;
 		const noteId = noteElement.dataset.id;
+		const noteData = allNotesCache.find(n => n.id === parseInt(noteId, 10));
 		// const moreBtn = target.closest('.waterfall-more-btn');
 		// if (moreBtn) {
 		// 	e.stopPropagation(); // 阻止事件冒泡到document的关闭监听器
 		// 	showWaterfallPopover(moreBtn, noteId);
 		// 	return;
 		// }
+		const forceLinkBtn = target.closest('.force-link-btn');
+		if (forceLinkBtn) {
+			await openLinkDecisionPanelForNote(noteId, '请先完成关联决策后再继续处理这条卡片。');
+			return;
+		}
 		const editBtn = target.closest('.edit');
 		const fullscreenEditBtn = target.closest('.fullscreen-edit');
+		if ((editBtn || fullscreenEditBtn) && noteData?.link_status === 'pending') {
+			await openLinkDecisionPanelForNote(noteId, '该卡片仍在收件箱，打开时需要先处理关联。');
+			return;
+		}
 
 		const cancelEditBtn = target.closest('.cancel-edit');
 		const removeFileBtn = target.closest('.remove-file-btn');
