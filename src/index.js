@@ -2127,7 +2127,11 @@ async function findSimilarNotes(noteId, db, limit = 5) {
 			   COUNT(nt.tag_id) as common_tags
 		FROM notes n
 		JOIN note_tags nt ON n.id = nt.note_id
-		WHERE n.id != ? AND n.link_status != 'pending'
+		WHERE n.id != ?
+		  AND NOT (
+			n.link_status = 'pending'
+			AND INSTR(LOWER(COALESCE(n.content, '')), '#inbox') > 0
+		  )
 	`;
 	const params = [noteId];
 
@@ -2154,7 +2158,11 @@ async function getRecentNotes(noteId, db, limit = 5) {
 	const { results } = await db.prepare(`
 		SELECT id, content, updated_at
 		FROM notes
-		WHERE id != ? AND link_status != 'pending'
+		WHERE id != ?
+		  AND NOT (
+			link_status = 'pending'
+			AND INSTR(LOWER(COALESCE(content, '')), '#inbox') > 0
+		  )
 		ORDER BY updated_at DESC
 		LIMIT ?
 	`).bind(noteId, limit).all();
@@ -2179,7 +2187,11 @@ async function handleSearchForLinking(request, env) {
 		const { results: suggestions } = await db.prepare(`
 			SELECT id, content, updated_at
 			FROM notes
-			WHERE id != ? AND link_status != 'pending'
+			WHERE id != ?
+			  AND NOT (
+				link_status = 'pending'
+				AND INSTR(LOWER(COALESCE(content, '')), '#inbox') > 0
+			  )
 			  AND (content LIKE ? OR id IN (
 				SELECT note_id FROM note_tags nt
 				JOIN tags t ON nt.tag_id = t.id
@@ -2269,7 +2281,10 @@ async function handleCreateLinks(request, noteId, env) {
 		const { links } = await request.json();
 
 		if (!Array.isArray(links) || links.length === 0) {
-			return jsonResponse({ error: 'Links array is required' }, 400);
+			return jsonResponse({
+				error: 'Links array is required',
+				code: 'NO_LINKS_SELECTED'
+			}, 400);
 		}
 
 		const now = Date.now();

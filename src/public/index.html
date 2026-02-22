@@ -7105,8 +7105,15 @@
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ links: linksToSave })
 				});
-				if (!response.ok) throw new Error('Failed to save links');
 				const result = await response.json().catch(() => ({}));
+				if (!response.ok) {
+					const errorCode = result.code || '';
+					if (response.status === 400 && errorCode === 'NO_LINKS_SELECTED') {
+						showToast('请至少关联 1 条卡片，或选择“设为新主题起点 / 存入收件箱”', 'warning', 4500);
+						return;
+					}
+					throw new Error(result.message || result.error || 'Failed to save links');
+				}
 				const linkedCount = Array.isArray(result.links) ? result.links.length : linksToSave.length;
 				await setNoteInboxStatus(noteId, false);
 				closeLinkDecisionPanel();
