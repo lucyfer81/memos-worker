@@ -37,6 +37,28 @@ CREATE TABLE note_tags (
   FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
 );
 
+CREATE TABLE rss_ingest_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source TEXT NOT NULL,
+  external_id TEXT,
+  canonical_url TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  note_id INTEGER NOT NULL,
+  first_seen_at INTEGER NOT NULL,
+  last_seen_at INTEGER NOT NULL,
+  FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX idx_rss_ingest_source_external_unique
+ON rss_ingest_items(source, external_id)
+WHERE external_id IS NOT NULL AND TRIM(external_id) <> '';
+
+CREATE UNIQUE INDEX idx_rss_ingest_canonical_url_unique
+ON rss_ingest_items(canonical_url);
+
+CREATE INDEX idx_rss_ingest_note_id ON rss_ingest_items(note_id);
+CREATE INDEX idx_rss_ingest_last_seen_at ON rss_ingest_items(last_seen_at DESC);
+
 
 CREATE TABLE nodes (
   id TEXT PRIMARY KEY,

@@ -2,8 +2,15 @@ const NOTES_PER_PAGE = 10;
 const SESSION_DURATION_SECONDS = 30*86400; // Session 有效期: 30 天
 const SESSION_COOKIE = '__session';
 const DEFAULT_FOLDER_NAME = 'Inbox';
+const RSS_DEFAULT_FOLDER_ROOT = 'PARA/Areas/Reading/RSS';
+const RSS_INGEST_MAX_ITEMS = 50;
+const LINK_POLICY_STRICT = 'strict';
+const LINK_POLICY_SOFT = 'soft';
+const LINK_POLICY_OFF = 'off';
 let folderSchemaReady = false;
 let folderSchemaInitPromise = null;
+let rssIngestSchemaReady = false;
+let rssIngestSchemaInitPromise = null;
 
 function normalizeFolderName(value) {
 	const raw = typeof value === 'string' ? value : (value ?? '').toString();
@@ -22,7 +29,25 @@ function normalizeNoteFolder(note) {
 		return note;
 	}
 	note.folder = normalizeFolderName(note.folder);
+	note.link_policy = resolveLinkPolicy(note.folder);
 	return note;
+}
+
+function resolveLinkPolicy(folderPath) {
+	const normalizedFolder = normalizeFolderName(folderPath);
+	if (isFolderInSubtree(normalizedFolder, 'PARA/Archives')) {
+		return LINK_POLICY_OFF;
+	}
+	if (isFolderInSubtree(normalizedFolder, 'PARA/Projects') || isFolderInSubtree(normalizedFolder, 'PARA/Areas')) {
+		return LINK_POLICY_SOFT;
+	}
+	if (
+		normalizedFolder.toLowerCase() === DEFAULT_FOLDER_NAME.toLowerCase()
+		|| isFolderInSubtree(normalizedFolder, 'PARA/Resources')
+	) {
+		return LINK_POLICY_STRICT;
+	}
+	return LINK_POLICY_STRICT;
 }
 
 function folderPathKey(value) {
@@ -43,6 +68,24 @@ function isFolderInSubtree(path, rootPath) {
 	const pathKey = folderPathKey(path);
 	const rootKey = folderPathKey(rootPath);
 	return pathKey === rootKey || pathKey.startsWith(`${rootKey}/`);
+}
+
+async function resolveLinkStatusForFolder(db, noteId, currentStatus, folderPath) {
+	const normalizedStatus = typeof currentStatus === 'string' ? currentStatus.trim().toLowerCase() : '';
+	if (normalizedStatus !== 'pending') {
+		return normalizedStatus || 'orphan';
+	}
+	if (resolveLinkPolicy(folderPath) === LINK_POLICY_STRICT) {
+		return 'pending';
+	}
+
+	const linkCountResult = await db.prepare(`
+		SELECT COUNT(*) AS count
+		FROM note_links
+		WHERE from_id = ?
+	`).bind(noteId).first();
+	const outgoingLinksCount = Number(linkCountResult?.count || 0);
+	return outgoingLinksCount > 0 ? 'linked' : 'orphan';
 }
 
 function replaceFolderPrefix(path, fromPath, toPath) {
@@ -97,6 +140,265 @@ async function parseJsonBody(request) {
 	} catch (_e) {
 		return { ok: false, data: null };
 	}
+}
+
+function constantTimeEquals(a, b) {
+	if (typeof a !== 'string' || typeof b !== 'string') {
+		return false;
+	}
+	let diff = a.length ^ b.length;
+	const maxLength = Math.max(a.length, b.length);
+	for (let i = 0; i < maxLength; i++) {
+		const codeA = i < a.length ? a.charCodeAt(i) : 0;
+		const codeB = i < b.length ? b.charCodeAt(i) : 0;
+		diff |= (codeA ^ codeB);
+	}
+	return diff === 0;
+}
+
+function extractBearerToken(request) {
+	const authHeader = request.headers.get('Authorization') || '';
+	const match = authHeader.match(/^Bearer\s+(.+)$/i);
+	if (match && match[1]) {
+		return match[1].trim();
+	}
+	const fallbackToken = request.headers.get('X-RSS-Token') || '';
+	return fallbackToken.trim();
+}
+
+function sanitizeRssFolderSegment(value, fallback = 'feed') {
+	const raw = typeof value === 'string' ? value : (value ?? '').toString();
+	const normalized = raw
+		.trim()
+		.replace(/\\/g, '/')
+		.replace(/\//g, '-')
+		.replace(/\s+/g, '-')
+		.replace(/[^\p{L}\p{N}._-]+/gu, '-')
+		.replace(/-+/g, '-')
+		.replace(/^[-._]+|[-._]+$/g, '');
+	return normalized || fallback;
+}
+
+function normalizeRssSource(value) {
+	const raw = typeof value === 'string' ? value : (value ?? '').toString();
+	const normalized = raw.trim();
+	return normalized.slice(0, 255);
+}
+
+function normalizeOptionalExternalId(value) {
+	if (value === null || value === undefined) {
+		return null;
+	}
+	const normalized = String(value).trim();
+	return normalized ? normalized.slice(0, 512) : null;
+}
+
+function normalizeCanonicalUrl(value) {
+	const raw = typeof value === 'string' ? value.trim() : '';
+	if (!raw) {
+		return '';
+	}
+
+	const trackingKeys = new Set(['fbclid', 'gclid', 'igshid', 'mc_cid', 'mc_eid', 'ref', 'spm']);
+	const normalizeWithUrl = (input) => {
+		const url = new URL(input);
+		url.hash = '';
+		url.username = '';
+		url.password = '';
+		url.hostname = url.hostname.toLowerCase();
+		if ((url.protocol === 'https:' && url.port === '443') || (url.protocol === 'http:' && url.port === '80')) {
+			url.port = '';
+		}
+		if (url.pathname.length > 1) {
+			url.pathname = url.pathname.replace(/\/+$/, '');
+		}
+		const params = Array.from(url.searchParams.entries())
+			.filter(([key]) => {
+				const lowered = key.toLowerCase();
+				if (lowered.startsWith('utm_')) return false;
+				return !trackingKeys.has(lowered);
+			})
+			.sort(([a], [b]) => a.localeCompare(b));
+		url.search = '';
+		for (const [key, paramValue] of params) {
+			url.searchParams.append(key, paramValue);
+		}
+		return url.toString();
+	};
+
+	try {
+		return normalizeWithUrl(raw);
+	} catch (_e) {
+		try {
+			return normalizeWithUrl(`https://${raw}`);
+		} catch (_e2) {
+			return raw;
+		}
+	}
+}
+
+function normalizeRssPublishedAt(value) {
+	if (value === null || value === undefined || value === '') {
+		return '';
+	}
+	if (typeof value === 'number' && Number.isFinite(value)) {
+		const timestampMs = value < 1_000_000_000_000 ? value * 1000 : value;
+		const date = new Date(timestampMs);
+		return Number.isNaN(date.getTime()) ? '' : date.toISOString();
+	}
+	if (typeof value === 'string') {
+		const trimmed = value.trim();
+		if (!trimmed) {
+			return '';
+		}
+		if (/^\d+$/.test(trimmed)) {
+			const numeric = Number(trimmed);
+			if (Number.isFinite(numeric)) {
+				const timestampMs = numeric < 1_000_000_000_000 ? numeric * 1000 : numeric;
+				const date = new Date(timestampMs);
+				if (!Number.isNaN(date.getTime())) {
+					return date.toISOString();
+				}
+			}
+		}
+		const parsed = new Date(trimmed);
+		if (!Number.isNaN(parsed.getTime())) {
+			return parsed.toISOString();
+		}
+		return trimmed.slice(0, 128);
+	}
+	return '';
+}
+
+function normalizeRssTitle(value, fallback) {
+	const raw = typeof value === 'string' ? value : (value ?? '').toString();
+	const normalized = raw.trim().replace(/\s+/g, ' ');
+	if (normalized) {
+		return normalized.slice(0, 512);
+	}
+	return fallback;
+}
+
+function normalizeRssSummary(value) {
+	const raw = typeof value === 'string' ? value : (value ?? '').toString();
+	const normalized = raw.trim();
+	if (!normalized) {
+		return '';
+	}
+	return normalized.slice(0, 12000);
+}
+
+function normalizeRssTagToken(value) {
+	const raw = typeof value === 'string' ? value : (value ?? '').toString();
+	const normalized = raw
+		.trim()
+		.toLowerCase()
+		.replace(/[^\p{L}\p{N}_-]+/gu, '-')
+		.replace(/-+/g, '-')
+		.replace(/^[-_]+|[-_]+$/g, '');
+	return normalized.slice(0, 64);
+}
+
+function normalizeRssTags(value) {
+	if (Array.isArray(value)) {
+		return value.map(item => normalizeRssTagToken(item)).filter(Boolean);
+	}
+	if (typeof value === 'string') {
+		return value
+			.split(/[,\s]+/)
+			.map(item => normalizeRssTagToken(item))
+			.filter(Boolean);
+	}
+	return [];
+}
+
+function buildDefaultRssFolderPath(source, folderOverride) {
+	const customFolder = typeof folderOverride === 'string' ? folderOverride.trim() : '';
+	if (customFolder) {
+		return normalizeFolderName(customFolder);
+	}
+	const feedSegment = sanitizeRssFolderSegment(source, 'feed');
+	return normalizeFolderName(`${RSS_DEFAULT_FOLDER_ROOT}/${feedSegment}`);
+}
+
+function buildRssTemplateContent({ title, source, canonicalUrl, publishedAt, summary, tags }) {
+	const lines = [];
+	lines.push(`# ${title}`);
+	lines.push('');
+	lines.push(`- Source: ${source}`);
+	lines.push(`- Link: [Original](${canonicalUrl})`);
+	if (publishedAt) {
+		lines.push(`- Published: ${publishedAt}`);
+	}
+	lines.push('');
+	if (summary) {
+		lines.push(summary);
+		lines.push('');
+	}
+	lines.push(tags.join(' '));
+	return `${lines.join('\n')}\n`;
+}
+
+function normalizeRssIngestItem(rawItem) {
+	if (!rawItem || typeof rawItem !== 'object') {
+		return { ok: false, error: 'Each item must be an object.' };
+	}
+
+	const source = normalizeRssSource(rawItem.source ?? rawItem.feed ?? rawItem.feed_name ?? rawItem.feedTitle);
+	if (!source) {
+		return { ok: false, error: 'source is required.' };
+	}
+
+	const canonicalUrl = normalizeCanonicalUrl(rawItem.canonical_url ?? rawItem.url ?? rawItem.link);
+	if (!canonicalUrl) {
+		return { ok: false, error: 'url/link is required.' };
+	}
+
+	const externalId = normalizeOptionalExternalId(rawItem.external_id ?? rawItem.guid ?? rawItem.id);
+	const publishedAt = normalizeRssPublishedAt(rawItem.published_at ?? rawItem.published ?? rawItem.pubDate ?? rawItem.date);
+	const summary = normalizeRssSummary(rawItem.summary ?? rawItem.excerpt ?? rawItem.description ?? '');
+	const title = normalizeRssTitle(rawItem.title, canonicalUrl);
+	const folder = buildDefaultRssFolderPath(source, rawItem.folder);
+	const feedTag = normalizeRssTagToken(sanitizeRssFolderSegment(source, 'feed'));
+	const customTags = normalizeRssTags(rawItem.tags);
+	const tagTokens = ['rss', 'blog', feedTag, ...customTags]
+		.map(tag => normalizeRssTagToken(tag))
+		.filter(Boolean);
+	const uniqueTagTokens = [...new Set(tagTokens)];
+	const tags = uniqueTagTokens.map(tag => `#${tag}`);
+	const content = buildRssTemplateContent({
+		title,
+		source,
+		canonicalUrl,
+		publishedAt,
+		summary,
+		tags
+	});
+
+	return {
+		ok: true,
+		item: {
+			source,
+			externalId,
+			canonicalUrl,
+			publishedAt,
+			title,
+			summary,
+			folder,
+			tags,
+			content
+		}
+	};
+}
+
+async function computeSha256Hex(value) {
+	const encoder = new TextEncoder();
+	const bytes = encoder.encode(value);
+	const digest = await crypto.subtle.digest('SHA-256', bytes);
+	const hex = Array.from(new Uint8Array(digest))
+		.map(byte => byte.toString(16).padStart(2, '0'))
+		.join('');
+	return hex;
 }
 
 function isDuplicateColumnError(error, columnName) {
@@ -156,6 +458,93 @@ async function ensureFolderSchema(db) {
 		});
 	}
 	await folderSchemaInitPromise;
+}
+
+async function ensureRssIngestSchema(db) {
+	if (rssIngestSchemaReady) {
+		return;
+	}
+	if (!rssIngestSchemaInitPromise) {
+		rssIngestSchemaInitPromise = (async () => {
+			await db.prepare(`
+				CREATE TABLE IF NOT EXISTS rss_ingest_items (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					source TEXT NOT NULL,
+					external_id TEXT,
+					canonical_url TEXT NOT NULL,
+					content_hash TEXT NOT NULL,
+					note_id INTEGER NOT NULL,
+					first_seen_at INTEGER NOT NULL,
+					last_seen_at INTEGER NOT NULL,
+					FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+				)
+			`).run();
+			await db.prepare(`
+				CREATE UNIQUE INDEX IF NOT EXISTS idx_rss_ingest_source_external_unique
+				ON rss_ingest_items(source, external_id)
+				WHERE external_id IS NOT NULL AND TRIM(external_id) <> ''
+			`).run();
+			await db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_rss_ingest_canonical_url_unique ON rss_ingest_items(canonical_url)").run();
+			await db.prepare("CREATE INDEX IF NOT EXISTS idx_rss_ingest_note_id ON rss_ingest_items(note_id)").run();
+			await db.prepare("CREATE INDEX IF NOT EXISTS idx_rss_ingest_last_seen_at ON rss_ingest_items(last_seen_at DESC)").run();
+			rssIngestSchemaReady = true;
+		})().catch((e) => {
+			rssIngestSchemaInitPromise = null;
+			throw e;
+		});
+	}
+	await rssIngestSchemaInitPromise;
+}
+
+async function findRssIngestItem(db, source, externalId, canonicalUrl) {
+	if (externalId) {
+		const byExternalId = await db.prepare(`
+			SELECT id, source, external_id, canonical_url, content_hash, note_id, first_seen_at, last_seen_at
+			FROM rss_ingest_items
+			WHERE source = ? AND external_id = ?
+			LIMIT 1
+		`).bind(source, externalId).first();
+		if (byExternalId) {
+			return byExternalId;
+		}
+	}
+	const byCanonicalUrl = await db.prepare(`
+		SELECT id, source, external_id, canonical_url, content_hash, note_id, first_seen_at, last_seen_at
+		FROM rss_ingest_items
+		WHERE canonical_url = ?
+		LIMIT 1
+	`).bind(canonicalUrl).first();
+	return byCanonicalUrl || null;
+}
+
+async function createRssImportedNote(db, folderName, content, now) {
+	await ensureFolderPathExists(db, folderName);
+	const picUrls = extractImageUrls(content);
+	const initialLinkStatus = resolveLinkPolicy(folderName) === LINK_POLICY_STRICT ? 'pending' : 'orphan';
+	const insertStmt = db.prepare(
+		"INSERT INTO notes (content, files, is_pinned, created_at, updated_at, pics, link_status, folder) VALUES (?, ?, 0, ?, ?, ?, ?, ?) RETURNING id"
+	);
+	const { id: noteId } = await insertStmt.bind(content, '[]', now, now, picUrls, initialLinkStatus, folderName).first();
+	if (!noteId) {
+		throw new Error('Failed to create note for RSS item.');
+	}
+	await processNoteTags(db, noteId, content);
+	return noteId;
+}
+
+async function updateRssImportedNote(db, noteId, folderName, content, now) {
+	const existingNote = await db.prepare("SELECT id, link_status FROM notes WHERE id = ?").bind(noteId).first();
+	if (!existingNote) {
+		return null;
+	}
+	await ensureFolderPathExists(db, folderName);
+	const picUrls = extractImageUrls(content);
+	const nextLinkStatus = await resolveLinkStatusForFolder(db, noteId, existingNote.link_status, folderName);
+	await db.prepare(
+		"UPDATE notes SET content = ?, updated_at = ?, pics = ?, folder = ?, link_status = ? WHERE id = ?"
+	).bind(content, now, picUrls, folderName, nextLinkStatus, noteId).run();
+	await processNoteTags(db, noteId, content);
+	return noteId;
 }
 
 export default {
@@ -218,6 +607,9 @@ async function handleApiRequest(request, env) {
 	}
 	if (request.method === 'POST' && pathname === '/api/logout') {
 		return handleLogout(request, env);
+	}
+	if (request.method === 'POST' && pathname === '/api/rss/ingest') {
+		return handleRssIngest(request, env);
 	}
 
 	// --- 从这里开始，所有 API 都需要认证 ---
@@ -866,6 +1258,146 @@ async function handleLogout(request, env) {
 }
 
 /**
+ * Token-protected RSS ingestion endpoint for external scripts.
+ * POST /api/rss/ingest
+ */
+async function handleRssIngest(request, env) {
+	const configuredToken = typeof env.RSS_INGEST_TOKEN === 'string' ? env.RSS_INGEST_TOKEN.trim() : '';
+	if (!configuredToken) {
+		return jsonResponse({ error: 'RSS ingest token is not configured on worker side.' }, 503);
+	}
+
+	const incomingToken = extractBearerToken(request);
+	if (!incomingToken || !constantTimeEquals(incomingToken, configuredToken)) {
+		return jsonResponse({ error: 'Unauthorized' }, 401);
+	}
+
+	const parsed = await parseJsonBody(request);
+	if (!parsed.ok || !parsed.data) {
+		return jsonResponse({ error: 'Invalid JSON body.' }, 400);
+	}
+
+	const rawItems = Array.isArray(parsed.data)
+		? parsed.data
+		: (Array.isArray(parsed.data.items) ? parsed.data.items : [parsed.data]);
+	if (rawItems.length === 0) {
+		return jsonResponse({ error: 'At least one item is required.' }, 400);
+	}
+	if (rawItems.length > RSS_INGEST_MAX_ITEMS) {
+		return jsonResponse({ error: `Maximum ${RSS_INGEST_MAX_ITEMS} items are allowed per request.` }, 400);
+	}
+
+	const db = env.DB;
+	await ensureFolderSchema(db);
+	await ensureRssIngestSchema(db);
+
+	let createdCount = 0;
+	let updatedCount = 0;
+	let skippedCount = 0;
+	let failedCount = 0;
+	const results = [];
+
+	for (let index = 0; index < rawItems.length; index++) {
+		const normalized = normalizeRssIngestItem(rawItems[index]);
+		if (!normalized.ok) {
+			failedCount++;
+			results.push({
+				index,
+				status: 'error',
+				error: normalized.error
+			});
+			continue;
+		}
+
+		const now = Date.now();
+		const { source, externalId, canonicalUrl, folder, content, title } = normalized.item;
+		const contentHash = await computeSha256Hex(content);
+
+		try {
+			const existing = await findRssIngestItem(db, source, externalId, canonicalUrl);
+
+			if (!existing) {
+				const noteId = await createRssImportedNote(db, folder, content, now);
+				await db.prepare(`
+					INSERT INTO rss_ingest_items
+					(source, external_id, canonical_url, content_hash, note_id, first_seen_at, last_seen_at)
+					VALUES (?, ?, ?, ?, ?, ?, ?)
+				`).bind(source, externalId, canonicalUrl, contentHash, noteId, now, now).run();
+				createdCount++;
+				results.push({
+					index,
+					status: 'created',
+					note_id: noteId,
+					canonical_url: canonicalUrl,
+					title
+				});
+				continue;
+			}
+
+			if (existing.content_hash === contentHash) {
+				const mergedSource = existing.source || source;
+				const mergedExternalId = existing.external_id || externalId;
+				await db.prepare(`
+					UPDATE rss_ingest_items
+					SET source = ?, external_id = ?, canonical_url = ?, last_seen_at = ?
+					WHERE id = ?
+				`).bind(mergedSource, mergedExternalId, canonicalUrl, now, existing.id).run();
+				skippedCount++;
+				results.push({
+					index,
+					status: 'skipped',
+					note_id: existing.note_id,
+					canonical_url: canonicalUrl,
+					title
+				});
+				continue;
+			}
+
+			let noteId = await updateRssImportedNote(db, existing.note_id, folder, content, now);
+			if (!noteId) {
+				noteId = await createRssImportedNote(db, folder, content, now);
+			}
+			const mergedSource = existing.source || source;
+			const mergedExternalId = existing.external_id || externalId;
+			await db.prepare(`
+				UPDATE rss_ingest_items
+				SET source = ?, external_id = ?, canonical_url = ?, content_hash = ?, note_id = ?, last_seen_at = ?
+				WHERE id = ?
+			`).bind(mergedSource, mergedExternalId, canonicalUrl, contentHash, noteId, now, existing.id).run();
+			updatedCount++;
+			results.push({
+				index,
+				status: 'updated',
+				note_id: noteId,
+				canonical_url: canonicalUrl,
+				title
+			});
+		} catch (e) {
+			failedCount++;
+			results.push({
+				index,
+				status: 'error',
+				error: e?.message || 'Unknown error',
+				canonical_url: canonicalUrl,
+				title
+			});
+		}
+	}
+
+	return jsonResponse({
+		success: failedCount === 0,
+		summary: {
+			received: rawItems.length,
+			created: createdCount,
+			updated: updatedCount,
+			skipped: skippedCount,
+			failed: failedCount
+		},
+		results
+	});
+}
+
+/**
  * 从 KV 中获取用户设置。如果 KV 中没有，则返回默认值。
  */
 async function handleGetSettings(request, env) {
@@ -1026,12 +1558,13 @@ async function handleNotesList(request, env) {
 				const picUrls = extractImageUrls(content);
 
 				// 【核心修改】在 INSERT 语句中加入新的 pics 字段和 link_status 字段
+				const initialLinkStatus = resolveLinkPolicy(folderName) === LINK_POLICY_STRICT ? 'pending' : 'orphan';
 				const insertStmt = db.prepare(
 					"INSERT INTO notes (content, files, is_pinned, created_at, updated_at, pics, link_status, folder) VALUES (?, ?, 0, ?, ?, ?, ?, ?) RETURNING id"
 				);
 				// 先用一个空的 files 数组插入
-				// 【核心修改】将提取出的 picUrls 绑定到 SQL 语句中，并设置 link_status 为 'pending'
-				const { id: noteId } = await insertStmt.bind(content, "[]", now, now, picUrls, 'pending', folderName).first();
+				// 【核心修改】将提取出的 picUrls 绑定到 SQL 语句中，并按 folder 策略设置 link_status
+				const { id: noteId } = await insertStmt.bind(content, "[]", now, now, picUrls, initialLinkStatus, folderName).first();
 				if (!noteId) {
 					throw new Error("Failed to create note and get ID.");
 				}
@@ -1152,11 +1685,12 @@ async function handleNoteDetail(request, noteId, env) {
 					const picUrls = extractImageUrls(content);
 					const newTimestamp = shouldUpdateTimestamp ? Date.now() : existingNote.updated_at;
 					// 在 UPDATE 语句中加入 pics 字段的更新
+					const nextLinkStatus = await resolveLinkStatusForFolder(db, id, existingNote.link_status, folderName);
 					const stmt = db.prepare(
-						"UPDATE notes SET content = ?, files = ?, updated_at = ?, pics = ?, folder = ? WHERE id = ?"
+						"UPDATE notes SET content = ?, files = ?, updated_at = ?, pics = ?, folder = ?, link_status = ? WHERE id = ?"
 					);
 					console.log('[DEBUG] updating note in database...');
-					await stmt.bind(content, JSON.stringify(currentFiles), newTimestamp, picUrls, folderName, id).run();
+					await stmt.bind(content, JSON.stringify(currentFiles), newTimestamp, picUrls, folderName, nextLinkStatus, id).run();
 					console.log('[DEBUG] note updated, now processing tags...');
 					await processNoteTags(db, id, content);
 					console.log('[DEBUG] tags processed');
@@ -1164,8 +1698,9 @@ async function handleNoteDetail(request, noteId, env) {
 				if (formData.has('folder') && !formData.has('content')) {
 					const folderName = normalizeFolderName(formData.get('folder'));
 					await ensureFolderPathExists(db, folderName);
-					const stmt = db.prepare("UPDATE notes SET folder = ? WHERE id = ?");
-					await stmt.bind(folderName, id).run();
+					const nextLinkStatus = await resolveLinkStatusForFolder(db, id, existingNote.link_status, folderName);
+					const stmt = db.prepare("UPDATE notes SET folder = ?, link_status = ? WHERE id = ?");
+					await stmt.bind(folderName, nextLinkStatus, id).run();
 				}
 
 				if (formData.has('isPinned')) { // --- 这是置顶状态的更新 ---
@@ -3078,7 +3613,7 @@ async function handleSetInboxStatus(noteId, inInbox, env) {
 	}
 
 	try {
-		const note = await db.prepare("SELECT id, content, updated_at, link_status FROM notes WHERE id = ?").bind(id).first();
+		const note = await db.prepare("SELECT id, content, updated_at, link_status, folder FROM notes WHERE id = ?").bind(id).first();
 		if (!note) {
 			return jsonResponse({ error: 'Note not found' }, 404);
 		}
@@ -3096,6 +3631,8 @@ async function handleSetInboxStatus(noteId, inInbox, env) {
 			const outgoingLinksCount = Number(linkCountResult?.count || 0);
 			if (outgoingLinksCount > 0) {
 				nextStatus = 'linked';
+			} else if (resolveLinkPolicy(note.folder) !== LINK_POLICY_STRICT) {
+				nextStatus = 'orphan';
 			}
 		}
 

@@ -4016,7 +4016,11 @@
 	let selectedLinks = new Map();
 	let linkTypeDrafts = new Map();
 	const LINK_TYPE_OPTIONS = ['related', 'supports', 'contradicts', 'expands'];
+	const LINK_POLICY_STRICT = 'strict';
+	const LINK_POLICY_SOFT = 'soft';
+	const LINK_POLICY_OFF = 'off';
 	let isLinkDecisionPending = false;
+	let activeLinkPanelRequiresDecision = false;
 	let pendingNoteContent = null;
 	let isAutoInboxFlushing = false;
 	const PENDING_LINK_DECISION_STORAGE_KEY = 'pending-link-decision-note-id';
@@ -4354,6 +4358,35 @@
 			.filter(Boolean)
 			.join('/');
 		return normalized || 'Inbox';
+	}
+
+	function resolveLinkPolicyForFolder(folderPath) {
+		const normalizedFolder = normalizeFolderPath(folderPath);
+		if (isFolderInSubtree(normalizedFolder, 'PARA/Archives')) {
+			return LINK_POLICY_OFF;
+		}
+		if (isFolderInSubtree(normalizedFolder, 'PARA/Projects') || isFolderInSubtree(normalizedFolder, 'PARA/Areas')) {
+			return LINK_POLICY_SOFT;
+		}
+		if (
+			normalizedFolder.toLowerCase() === 'inbox'
+			|| isFolderInSubtree(normalizedFolder, 'PARA/Resources')
+		) {
+			return LINK_POLICY_STRICT;
+		}
+		return LINK_POLICY_STRICT;
+	}
+
+	function resolveLinkPolicyForNote(note) {
+		const policy = typeof note?.link_policy === 'string' ? note.link_policy.trim().toLowerCase() : '';
+		if ([LINK_POLICY_STRICT, LINK_POLICY_SOFT, LINK_POLICY_OFF].includes(policy)) {
+			return policy;
+		}
+		return resolveLinkPolicyForFolder(note?.folder || 'Inbox');
+	}
+
+	function shouldEnforceLinkDecisionForNote(note) {
+		return Boolean(note && note.link_status === 'pending' && resolveLinkPolicyForNote(note) === LINK_POLICY_STRICT);
 	}
 
 		// 需要被控制显隐的左侧栏卡片
@@ -4695,7 +4728,7 @@
 			}
 			case 'link': {
 				const noteData = allNotesCache.find(n => n.id === parseInt(noteId, 10));
-				const reminder = noteData?.link_status === 'pending'
+				const reminder = shouldEnforceLinkDecisionForNote(noteData)
 					? '该卡片仍在收件箱，请尽快完成关联决策。'
 					: '';
 				await openLinkDecisionPanelForNote(noteId, reminder);
@@ -6289,26 +6322,24 @@
 					formData.append('file', file);
 				});
 
-				try {
-					const res = await fetch('/api/notes', { method: 'POST', body: formData });
-					if (!res.ok) throw new Error(`Save failed: ${await res.text()}`);
+					try {
+						const res = await fetch('/api/notes', { method: 'POST', body: formData });
+						if (!res.ok) throw new Error(`Save failed: ${await res.text()}`);
 
-					const note = await res.json();
-
-					noteForm.reset(); // 使用 reset() 可以同時清空文本和文件輸入
-					updateMainFileDisplay(); // 更新主界面的文件列表顯示
-					closeFullscreenEditor();
-					await refreshNotes();
-
-					// 显示关联决策面板
-					showLinkDecisionPanel(note.id, note.content);
-
-				} catch (error) {
-					showCustomAlert(error.message, 'error');
-				} finally {
-					fsSaveBtn.disabled = false;
-					fsSaveBtn.textContent = 'Save';
-				}
+						const note = await res.json();
+						noteForm.reset(); // 使用 reset() 可以同時清空文本和文件輸入
+						updateMainFileDisplay(); // 更新主界面的文件列表顯示
+						closeFullscreenEditor();
+						await refreshNotes();
+						if (shouldEnforceLinkDecisionForNote(note)) {
+							showLinkDecisionPanel(note.id, note.content, { enforceDecision: true });
+						}
+					} catch (error) {
+						showCustomAlert(error.message, 'error');
+					} finally {
+						fsSaveBtn.disabled = false;
+						fsSaveBtn.textContent = 'Save';
+					}
 
 			} else { // 编辑现有笔记
 				const noteElement = notesContainer.querySelector(`.note[data-id="${currentEditingNoteId}"]`);
@@ -6482,7 +6513,8 @@
 			const noteResponse = await fetch(`/api/notes/${noteId}`);
 			if (!noteResponse.ok) throw new Error('Failed to fetch note');
 			const note = await noteResponse.json();
-			showLinkDecisionPanel(noteId, note.content);
+			const enforceDecision = shouldEnforceLinkDecisionForNote(note);
+			showLinkDecisionPanel(noteId, note.content, { enforceDecision });
 			if (reminderMessage) {
 				showToast(reminderMessage, 'warning', 4500);
 			}
@@ -6533,7 +6565,7 @@
 				return false;
 			}
 			const note = await noteResponse.json();
-			if (note.link_status !== 'pending') {
+			if (!shouldEnforceLinkDecisionForNote(note)) {
 				return false;
 			}
 			await setNoteInboxStatus(noteId, true);
@@ -6703,24 +6735,31 @@
 	}
 
 	// 显示关联决策面板
-	function showLinkDecisionPanel(noteId, content) {
+	function showLinkDecisionPanel(noteId, content, options = {}) {
 		const existingPanel = document.querySelector('.link-decision-panel');
 		if (existingPanel) {
 			existingPanel.remove();
 		}
 
-		isLinkDecisionPending = true;
+		const enforceDecision = options.enforceDecision === true;
+		isLinkDecisionPending = enforceDecision;
+		activeLinkPanelRequiresDecision = enforceDecision;
 		isAutoInboxFlushing = false;
 		pendingNoteContent = { id: noteId, content };
 		resetLinkSelectionState();
-		rememberPendingLinkDecision(noteId);
+		if (enforceDecision) {
+			rememberPendingLinkDecision(noteId);
+		} else {
+			clearPendingLinkDecision();
+		}
+		const closeButtonTitle = enforceDecision ? '关闭并存入收件箱' : '关闭';
 
 		const panel = document.createElement('div');
 		panel.className = 'link-decision-panel';
 		panel.innerHTML = `
 			<div class="link-panel-header">
 				<h2>🔗 建立关联关系</h2>
-				<button class="link-panel-close" onclick="closeLinkPanelToInbox()" title="关闭并存入收件箱">×</button>
+				<button class="link-panel-close" onclick="closeLinkPanelToInbox()" title="${closeButtonTitle}">×</button>
 			</div>
 			<div class="link-suggestions">
 				<h3>💡 相似卡片推荐</h3>
@@ -6867,7 +6906,11 @@
 
 	// 面板右上角关闭：转入收件箱后退出
 	async function closeLinkPanelToInbox() {
-		await saveToInbox();
+		if (activeLinkPanelRequiresDecision) {
+			await saveToInbox();
+			return;
+		}
+		closeLinkDecisionPanel();
 	}
 
 	// 保存到收件箱（自动添加 #inbox 标签）
@@ -6952,6 +6995,7 @@
 			panel.remove();
 		}
 		isLinkDecisionPending = false;
+		activeLinkPanelRequiresDecision = false;
 		pendingNoteContent = null;
 		resetLinkSelectionState();
 		isAutoInboxFlushing = false;
@@ -7776,7 +7820,7 @@
 
 		const noteElement = document.createElement('div');
 		noteElement.className = 'note';
-		if (note.link_status === 'pending') {
+		if (shouldEnforceLinkDecisionForNote(note)) {
 			noteElement.classList.add('note-status-pending');
 		}
 
@@ -7802,7 +7846,7 @@
 						</svg>
 				</button>
 		` : '';
-		const forceLinkButtonHTML = note.link_status === 'pending'
+		const forceLinkButtonHTML = shouldEnforceLinkDecisionForNote(note)
 			? `<button class='force-link-btn' data-action='force-link' title='该卡片必须先处理关联'>强制关联</button>`
 			: '';
 		let attachmentsHTML = '';
@@ -8314,8 +8358,9 @@
 			updateMainFileDisplay();
 			await refreshNotes();
 
-			// 显示关联决策面板
-			showLinkDecisionPanel(note.id, note.content);
+			if (shouldEnforceLinkDecisionForNote(note)) {
+				showLinkDecisionPanel(note.id, note.content, { enforceDecision: true });
+			}
 		} catch (error) {
 			showCustomAlert(error.message, 'error');
 		} finally {
@@ -8538,7 +8583,7 @@
 		}
 		const editBtn = target.closest('.edit');
 		const fullscreenEditBtn = target.closest('.fullscreen-edit');
-		if ((editBtn || fullscreenEditBtn) && noteData?.link_status === 'pending') {
+		if ((editBtn || fullscreenEditBtn) && shouldEnforceLinkDecisionForNote(noteData)) {
 			await openLinkDecisionPanelForNote(noteId, '该卡片仍在收件箱，打开时需要先处理关联。');
 			return;
 		}

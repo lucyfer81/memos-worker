@@ -79,6 +79,7 @@ After deployment, go to your new Worker's settings to add secrets.
     | ----------------------- | -------------------------------------------- |
 	| `USERNAME`              | Your login username                          |
 	| `PASSWORD`              | Your login password                          |
+	| `RSS_INGEST_TOKEN`      | (Optional) Bearer token for `/api/rss/ingest` |
 	| `TELEGRAM_BOT_TOKEN`    | (Optional) Your Telegram bot's token         |
 	| `TELEGRAM_WEBHOOK_SECRET` | (Optional) A long, random string for webhook security |
 	| `AUTHORIZED_TELEGRAM_IDS` | (Optional) Your Telegram user ID to authorize |
@@ -113,6 +114,43 @@ If you configured the Telegram variables, you need to activate the webhook once.
 -   **Understanding "Keep Time"**: When editing a note, you'll see a "Keep Time" checkbox.
 	-   **Checked (Default)**: When you save the edit, the note's original timestamp will be preserved. It will **not** jump to the top of your timeline.
 	-   **Unchecked**: When you save, the note's timestamp will be updated to the current time, making it the most recent note.
+
+## 🔌 RSS Ingestion API
+
+Use this endpoint if you want an external script (for example Python RSS fetcher) to push new articles into memos.
+
+- Endpoint: `POST /api/rss/ingest`
+- Auth: `Authorization: Bearer <RSS_INGEST_TOKEN>`
+- Body:
+	- Single item object, or
+	- `{ "items": [ ... ] }`
+- Current behavior:
+	- Normalizes URL and deduplicates by `(source + external_id)` and `canonical_url`
+	- Creates note on first seen article
+	- Updates existing note if content hash changed
+	- Skips if unchanged
+	- Default folder: `PARA/Areas/Reading/RSS/<feed>`
+
+Example:
+
+```bash
+curl -X POST "https://your-project.pages.dev/api/rss/ingest" \
+  -H "Authorization: Bearer <RSS_INGEST_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": [
+      {
+        "source": "example-feed",
+        "guid": "post-123",
+        "url": "https://example.com/posts/123?utm_source=rss",
+        "title": "Post title",
+        "published_at": "2026-02-24T08:00:00Z",
+        "summary": "Short summary",
+        "tags": ["ai", "rss"]
+      }
+    ]
+  }'
+```
 
 ## 🔍 Rebuilding Search Index (Recommended)
 

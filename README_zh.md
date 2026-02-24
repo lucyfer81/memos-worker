@@ -75,6 +75,7 @@
     | ----------------------- | ------------------------------------ |
 	| `USERNAME`              | 你的登录用户名                       |
 	| `PASSWORD`              | 你的登录密码                         |
+	| `RSS_INGEST_TOKEN`      | (可选) `/api/rss/ingest` 的 Bearer Token |
 	| `TELEGRAM_BOT_TOKEN`    | (可选) Telegram 机器人的 Token       |
 	| `TELEGRAM_WEBHOOK_SECRET` | (可选) 一个随机长字符串用于 Webhook 验证 |
 	| `AUTHORIZED_TELEGRAM_IDS` | (可选) 授权使用机器人的 Telegram 用户 ID |
@@ -109,6 +110,43 @@
 -   **理解 (Keep Time) 的作用**: 在编辑笔记时，你会看到一个 "Keep Time" 的复选框。
     -   **勾选 (默认)**: 保存编辑后，笔记的原始时间戳将被保留，它**不会**跑到时间线的顶端。
     -   **不勾选**: 保存后，笔记的时间戳会更新为当前时间，使其成为最新的笔记。
+
+## 🔌 RSS 导入 API
+
+如果你希望用外部脚本（例如 Python 抓取 RSS）把文章推送进 memos，可以使用这个接口。
+
+- 接口：`POST /api/rss/ingest`
+- 鉴权：`Authorization: Bearer <RSS_INGEST_TOKEN>`
+- 请求体：
+    - 单条 item 对象，或
+    - `{ "items": [ ... ] }`
+- 当前行为：
+    - 先做 URL 规范化，并按 `(source + external_id)` 与 `canonical_url` 去重
+    - 首次出现文章时创建 note
+    - `content_hash` 变化时更新原 note
+    - 未变化则跳过
+    - 默认 folder：`PARA/Areas/Reading/RSS/<feed>`
+
+示例：
+
+```bash
+curl -X POST "https://your-project.pages.dev/api/rss/ingest" \
+  -H "Authorization: Bearer <RSS_INGEST_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": [
+      {
+        "source": "example-feed",
+        "guid": "post-123",
+        "url": "https://example.com/posts/123?utm_source=rss",
+        "title": "Post title",
+        "published_at": "2026-02-24T08:00:00Z",
+        "summary": "Short summary",
+        "tags": ["ai", "rss"]
+      }
+    ]
+  }'
+```
 
 ## 🔍 重建搜索索引 (推荐)
 
