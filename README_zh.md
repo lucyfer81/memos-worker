@@ -166,3 +166,35 @@ npx wrangler dev
 	```bash
 	npx wrangler dev --remote
 	```
+
+## ✅ 远端优先协作流程（默认）
+
+从现在起，默认以 Cloudflare 线上环境作为“真实结果”来源：
+
+1. 默认讨论的是 Cloudflare 页面、远端 D1、远端 R2。
+2. 本地开发服务器仅用于调试，不作为最终验收结果。
+3. 每次改动完成后，必须部署到 Cloudflare Worker 后再测试。
+
+推荐命令：
+
+```bash
+# 检查 wrangler 登录状态
+npm run verify:auth
+
+# 本地调试（可选）
+npm run dev:local
+
+# 连接远端绑定调试（可选）
+npm run dev:remote
+
+# 部署到 Cloudflare
+npm run deploy:cf
+
+# 校验远端 D1（明确使用 --remote）
+npm run verify:remote:d1
+
+# 一键：认证检查 + 部署 + 远端校验
+npm run release:cf
+```
+
+详细流程见：[`docs/cf-remote-workflow.md`](docs/cf-remote-workflow.md)

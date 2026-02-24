@@ -3,10 +3,17 @@
 	"version": "1.0.0",
 	"private": true,
 	"scripts": {
+		"deploy:cf": "npx wrangler deploy",
 		"deploy": "npx wrangler deploy",
+		"dev:remote": "npx wrangler dev --x-remote-bindings",
+		"dev:local": "npx wrangler dev",
 		"dev remote": "npx wrangler dev --x-remote-bindings",
 		"dev local": "npx wrangler dev",
-		"start": "npx wrangler dev"
+		"start": "npx wrangler dev",
+		"verify:auth": "npx wrangler whoami",
+		"verify:remote:d1": "npx wrangler d1 execute memos-db --remote --command \"SELECT COUNT(*) AS notes_count FROM notes;\"",
+		"verify:local:d1": "npx wrangler d1 execute memos-db --local --command \"SELECT COUNT(*) AS notes_count FROM notes;\"",
+		"release:cf": "npm run verify:auth && npm run deploy:cf && npm run verify:remote:d1"
 	},
 	"devDependencies": {
 		"wrangler": "^4.33.0"

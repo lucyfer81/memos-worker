@@ -13,7 +13,8 @@ CREATE TABLE notes (
   is_favorited INTEGER DEFAULT 0 NOT NULL,
   is_archived INTEGER DEFAULT 0 NOT NULL,
   link_status TEXT DEFAULT 'pending',
-  pics TEXT
+  pics TEXT,
+  videos TEXT DEFAULT '[]'
 );
 
 CREATE TABLE note_tags (

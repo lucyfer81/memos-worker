@@ -3062,10 +3062,34 @@
 	padding: 20px;
   }
 
-  .link-decision-panel h2 {
-	margin: 0 0 15px 0;
-	color: var(--text-color);
-  }
+	  .link-panel-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		margin-bottom: 15px;
+	  }
+
+	  .link-panel-header h2 {
+		margin: 0;
+		color: var(--text-color);
+	  }
+
+	  .link-panel-close {
+		border: none;
+		background: transparent;
+		color: var(--text-secondary);
+		font-size: 22px;
+		line-height: 1;
+		padding: 2px 6px;
+		border-radius: 6px;
+		cursor: pointer;
+	  }
+
+	  .link-panel-close:hover {
+		background: var(--hover-bg-color);
+		color: var(--text-color);
+	  }
 
   .link-suggestions, .link-recent {
 	margin-bottom: 20px;
@@ -4005,7 +4029,9 @@
 
 	// 链接系统状态变量
 	let linkSuggestions = [];
-	let selectedLinks = [];
+	let selectedLinks = new Map();
+	let linkTypeDrafts = new Map();
+	const LINK_TYPE_OPTIONS = ['related', 'supports', 'contradicts', 'expands'];
 	let isLinkDecisionPending = false;
 	let pendingNoteContent = null;
 	let isAutoInboxFlushing = false;
@@ -6267,7 +6293,7 @@
 		};
 	}
 
-	async function performSearch(query) {
+	async function performGlobalSearch(query) {
 		appState.filters.query = query;
 		clearSearchBtn.style.display = query ? 'block' : 'none';
 		reloadNotes();
@@ -6304,7 +6330,7 @@
 	globalSearchInput.addEventListener('input', debounce(e => {
 		const query = e.target.value.trim();
 		if (query.length === 0 || query.length >= 2) {
-			performSearch(query);
+			performGlobalSearch(query);
 		}
 	}, 300)); // 延迟300毫秒执行搜索
 	/**
@@ -6313,17 +6339,17 @@
 	globalSearchInput.addEventListener('keydown', e => {
 		if (e.key === 'Enter') {
 			e.preventDefault();
-			const query = e.target.value.trim();
-			if (query.length === 0 || query.length >= 2) {
-				clearTimeout(searchDebounceTimer);
-				performSearch(query);
+				const query = e.target.value.trim();
+				if (query.length === 0 || query.length >= 2) {
+					clearTimeout(searchDebounceTimer);
+					performGlobalSearch(query);
+				}
 			}
-		}
-	});
+		});
 	// 清除按钮的点击事件
 	clearSearchBtn.addEventListener('click', () => {
 		globalSearchInput.value = '';
-		performSearch('');
+		performGlobalSearch('');
 		globalSearchInput.focus();
 	});
 
@@ -6902,6 +6928,99 @@
 		}
 	}
 
+	function normalizeLinkType(value) {
+		const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+		return LINK_TYPE_OPTIONS.includes(normalized) ? normalized : 'related';
+	}
+
+	function resetLinkSelectionState() {
+		selectedLinks = new Map();
+		linkTypeDrafts = new Map();
+	}
+
+	function getPreferredLinkType(noteId) {
+		const selected = selectedLinks.get(noteId);
+		if (selected && selected.linkType) {
+			return normalizeLinkType(selected.linkType);
+		}
+		return normalizeLinkType(linkTypeDrafts.get(noteId));
+	}
+
+	function syncLinkTypeSelects(noteId, linkType) {
+		const normalized = normalizeLinkType(linkType);
+		document.querySelectorAll(`.link-type-select[data-note-id="${noteId}"]`).forEach(select => {
+			if (select.value !== normalized) {
+				select.value = normalized;
+			}
+		});
+	}
+
+	function updateSelectedLinkType(noteId, linkType) {
+		const id = parseInt(noteId, 10);
+		if (isNaN(id)) {
+			return;
+		}
+		const normalized = normalizeLinkType(linkType);
+		linkTypeDrafts.set(id, normalized);
+		if (selectedLinks.has(id)) {
+			selectedLinks.set(id, { toId: id, linkType: normalized });
+		}
+		syncLinkTypeSelects(id, normalized);
+		updateSelectionUI();
+	}
+
+	function buildLinkTypeOptionsHtml(selectedType) {
+		const labels = {
+			related: '相关',
+			supports: '支持',
+			contradicts: '反驳',
+			expands: '扩展'
+		};
+		return LINK_TYPE_OPTIONS.map(type => (
+			`<option value="${type}"${type === selectedType ? ' selected' : ''}>${labels[type]}</option>`
+		)).join('');
+	}
+
+	function getIdsRenderedInOtherContainers(container) {
+		const ids = new Set();
+		document.querySelectorAll('.link-suggestion-item').forEach(item => {
+			if (container.contains(item)) {
+				return;
+			}
+			const id = parseInt(item.dataset.id, 10);
+			if (!isNaN(id)) {
+				ids.add(id);
+			}
+		});
+		return ids;
+	}
+
+	function buildSuggestionItemHtml(item, type) {
+		const noteId = parseInt(item?.id, 10);
+		if (isNaN(noteId)) {
+			return '';
+		}
+		const content = typeof item?.content === 'string' ? item.content : '';
+		const selectedType = getPreferredLinkType(noteId);
+		const isSelected = selectedLinks.has(noteId);
+		const metaText = type === 'similar'
+			? formatSimilarSuggestionMeta(item)
+			: type === 'recent'
+				? '最近编辑'
+				: '搜索结果';
+		return `
+			<div class="link-suggestion-item${isSelected ? ' selected' : ''}" data-id="${noteId}" onclick="toggleLinkSelection(${noteId})">
+				<div class="link-suggestion-content">
+					<div class="link-suggestion-title">${escapeHtml(content.substring(0, 50))}${content.length > 50 ? '...' : ''}</div>
+					<div class="link-suggestion-meta">${metaText}</div>
+				</div>
+				<select class="link-type-select" data-note-id="${noteId}" onclick="event.stopPropagation()" onchange="updateSelectedLinkType(${noteId}, this.value)">
+					${buildLinkTypeOptionsHtml(selectedType)}
+				</select>
+			</div>
+		`;
+	}
+
 	// 显示关联决策面板
 	function showLinkDecisionPanel(noteId, content) {
 		const existingPanel = document.querySelector('.link-decision-panel');
@@ -6912,13 +7031,16 @@
 		isLinkDecisionPending = true;
 		isAutoInboxFlushing = false;
 		pendingNoteContent = { id: noteId, content };
-		selectedLinks = [];
+		resetLinkSelectionState();
 		rememberPendingLinkDecision(noteId);
 
 		const panel = document.createElement('div');
 		panel.className = 'link-decision-panel';
 		panel.innerHTML = `
-			<h2>🔗 建立关联关系</h2>
+			<div class="link-panel-header">
+				<h2>🔗 建立关联关系</h2>
+				<button class="link-panel-close" onclick="closeLinkPanelToInbox()" title="关闭并存入收件箱">×</button>
+			</div>
 			<div class="link-suggestions">
 				<h3>💡 相似卡片推荐</h3>
 				<div id="similar-suggestions"></div>
@@ -6948,7 +7070,9 @@
 			clearTimeout(searchTimeout);
 			searchTimeout = setTimeout(() => {
 				if (e.target.value.length >= 2) {
-					performSearch(e.target.value, noteId);
+					performLinkSearch(e.target.value, noteId);
+				} else {
+					document.getElementById('search-results').innerHTML = '';
 				}
 			}, 300);
 		});
@@ -6959,69 +7083,76 @@
 		fetchLinkSuggestions(noteId).then(data => {
 			renderSuggestions('similar-suggestions', data.similar, 'similar');
 			renderSuggestions('recent-suggestions', data.recent, 'recent');
+			updateSelectionUI();
 		});
+	}
+
+	function formatSimilarSuggestionMeta(item) {
+		const score = Number(item?.similarity_score);
+		const commonTags = Number(item?.common_tags);
+		const hasScore = Number.isFinite(score);
+		const hasCommonTags = Number.isFinite(commonTags) && commonTags > 0;
+
+		if (hasScore && hasCommonTags) {
+			return `相关度: ${score.toFixed(2)} · 共标签: ${commonTags}`;
+		}
+		if (hasScore) {
+			return `相关度: ${score.toFixed(2)}`;
+		}
+		if (hasCommonTags) {
+			return `共标签: ${commonTags}`;
+		}
+		return '综合推荐';
 	}
 
 	// 渲染推荐列表
 	function renderSuggestions(containerId, items, type) {
 		const container = document.getElementById(containerId);
-		if (!items || items.length === 0) {
-			container.innerHTML = '<p style="color: var(--text-secondary);">暂无推荐</p>';
+		if (!container) {
+			return;
+		}
+		const inputItems = Array.isArray(items) ? items : [];
+		const existingIds = getIdsRenderedInOtherContainers(container);
+		const seen = new Set();
+		const dedupedItems = inputItems.filter(item => {
+			const id = parseInt(item?.id, 10);
+			if (isNaN(id) || existingIds.has(id) || seen.has(id)) {
+				return false;
+			}
+			seen.add(id);
+			return true;
+		});
+
+		if (dedupedItems.length === 0) {
+			const emptyText = type === 'search' ? '未找到匹配卡片' : '暂无推荐';
+			container.innerHTML = `<p style="color: var(--text-secondary);">${emptyText}</p>`;
 			return;
 		}
 
-		container.innerHTML = items.map(item => `
-			<div class="link-suggestion-item" data-id="${item.id}" onclick="toggleLinkSelection(${item.id})">
-				<div class="link-suggestion-content">
-					<div class="link-suggestion-title">${escapeHtml(item.content.substring(0, 50))}${item.content.length > 50 ? '...' : ''}</div>
-					<div class="link-suggestion-meta">
-						${type === 'similar' ? `相似度: ${item.common_tags || 'N/A'}` : `最近编辑`}
-					</div>
-				</div>
-				<select class="link-type-select" onclick="event.stopPropagation()">
-					<option value="related">相关</option>
-					<option value="supports">支持</option>
-					<option value="contradicts">反驳</option>
-					<option value="expands">扩展</option>
-				</select>
-			</div>
-		`).join('');
+		container.innerHTML = dedupedItems.map(item => buildSuggestionItemHtml(item, type)).join('');
 	}
 
 	// 搜索
-	function performSearch(query, excludeId) {
+	function performLinkSearch(query, excludeId) {
 		searchNotesForLinking(query, excludeId).then(data => {
-			const container = document.getElementById('search-results');
-			if (data.suggestions.length === 0) {
-				container.innerHTML = '<p style="color: var(--text-secondary);">未找到匹配卡片</p>';
-				return;
-			}
-			container.innerHTML = data.suggestions.map(item => `
-				<div class="link-suggestion-item" data-id="${item.id}" onclick="toggleLinkSelection(${item.id})">
-					<div class="link-suggestion-content">
-						<div class="link-suggestion-title">${escapeHtml(item.content.substring(0, 50))}${item.content.length > 50 ? '...' : ''}</div>
-					</div>
-					<select class="link-type-select" onclick="event.stopPropagation()">
-						<option value="related">相关</option>
-						<option value="supports">支持</option>
-						<option value="contradicts">反驳</option>
-						<option value="expands">扩展</option>
-					</select>
-				</div>
-			`).join('');
+			renderSuggestions('search-results', data.suggestions, 'search');
+			updateSelectionUI();
 		});
 	}
 
 	// 切换选择
 	function toggleLinkSelection(noteId) {
-		const existingIndex = selectedLinks.findIndex(l => l.toId === noteId);
-		if (existingIndex >= 0) {
-			selectedLinks.splice(existingIndex, 1);
+		const id = parseInt(noteId, 10);
+		if (isNaN(id)) {
+			return;
+		}
+		if (selectedLinks.has(id)) {
+			selectedLinks.delete(id);
 		} else {
-			if (selectedLinks.length >= 3) {
+			if (selectedLinks.size >= 3) {
 				showToast('💡 建议不超过3个关联。多个关联可能表示需要拆分卡片。', 'warning');
 			}
-			selectedLinks.push({ toId: noteId, linkType: 'related' });
+			selectedLinks.set(id, { toId: id, linkType: getPreferredLinkType(id) });
 		}
 		updateSelectionUI();
 	}
@@ -7030,20 +7161,32 @@
 	function updateSelectionUI() {
 		document.querySelectorAll('.link-suggestion-item').forEach(item => {
 			const id = parseInt(item.dataset.id);
-			if (selectedLinks.some(l => l.toId === id)) {
+			if (selectedLinks.has(id)) {
 				item.classList.add('selected');
 			} else {
 				item.classList.remove('selected');
 			}
+			const select = item.querySelector('.link-type-select');
+			if (select) {
+				select.value = getPreferredLinkType(id);
+			}
 		});
 
 		const countEl = document.getElementById('link-selected-count');
-		if (selectedLinks.length > 0) {
-			countEl.innerHTML = `✅ 已选择 ${selectedLinks.length} 个关联`;
+		if (!countEl) {
+			return;
+		}
+		if (selectedLinks.size > 0) {
+			countEl.innerHTML = `✅ 已选择 ${selectedLinks.size} 个关联`;
 			countEl.style.display = 'block';
 		} else {
 			countEl.style.display = 'none';
 		}
+	}
+
+	// 面板右上角关闭：转入收件箱后退出
+	async function closeLinkPanelToInbox() {
+		await saveToInbox();
 	}
 
 	// 保存到收件箱（自动添加 #inbox 标签）
@@ -7083,47 +7226,43 @@
 	}
 
 	// 保存关联
-		async function saveWithLinks() {
-			if (!pendingNoteContent) return;
-			const noteId = pendingNoteContent.id;
-			if (selectedLinks.length === 0) {
-				showToast('请至少关联 1 条卡片，或选择“设为新主题起点 / 存入收件箱”', 'warning', 4500);
-				return;
-			}
-			try {
-				const linksToSave = selectedLinks.map(link => ({ ...link }));
-				linksToSave.forEach(link => {
-					const item = document.querySelector(`.link-suggestion-item[data-id="${link.toId}"]`);
-					if (item) {
-						const select = item.querySelector('.link-type-select');
-						link.linkType = select.value;
-					}
-				});
-
-				const response = await fetch(`/api/notes/${noteId}/links`, {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ links: linksToSave })
-				});
-				const result = await response.json().catch(() => ({}));
-				if (!response.ok) {
-					const errorCode = result.code || '';
-					if (response.status === 400 && errorCode === 'NO_LINKS_SELECTED') {
-						showToast('请至少关联 1 条卡片，或选择“设为新主题起点 / 存入收件箱”', 'warning', 4500);
-						return;
-					}
-					throw new Error(result.message || result.error || 'Failed to save links');
-				}
-				const linkedCount = Array.isArray(result.links) ? result.links.length : linksToSave.length;
-				await setNoteInboxStatus(noteId, false);
-				closeLinkDecisionPanel();
-				reloadNotes();
-				showToast(`✅ 已创建 ${linkedCount} 个关联`);
-			} catch (error) {
-				console.error('Error saving links:', error);
-				showToast('❌ 保存失败', 'error');
-			}
+	async function saveWithLinks() {
+		if (!pendingNoteContent) return;
+		const noteId = pendingNoteContent.id;
+		if (selectedLinks.size === 0) {
+			showToast('请至少关联 1 条卡片，或选择“设为新主题起点 / 存入收件箱”', 'warning', 4500);
+			return;
 		}
+		try {
+			const linksToSave = Array.from(selectedLinks.values()).map(link => ({
+				toId: link.toId,
+				linkType: normalizeLinkType(link.linkType)
+			}));
+
+			const response = await fetch(`/api/notes/${noteId}/links`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ links: linksToSave })
+			});
+			const result = await response.json().catch(() => ({}));
+			if (!response.ok) {
+				const errorCode = result.code || '';
+				if (response.status === 400 && errorCode === 'NO_LINKS_SELECTED') {
+					showToast('请至少关联 1 条卡片，或选择“设为新主题起点 / 存入收件箱”', 'warning', 4500);
+					return;
+				}
+				throw new Error(result.message || result.error || 'Failed to save links');
+			}
+			const linkedCount = Array.isArray(result.links) ? result.links.length : linksToSave.length;
+			await setNoteInboxStatus(noteId, false);
+			closeLinkDecisionPanel();
+			reloadNotes();
+			showToast(`✅ 已创建 ${linkedCount} 个关联`);
+		} catch (error) {
+			console.error('Error saving links:', error);
+			showToast('❌ 保存失败', 'error');
+		}
+	}
 
 	// 关闭面板
 	function closeLinkDecisionPanel() {
@@ -7133,7 +7272,7 @@
 		}
 		isLinkDecisionPending = false;
 		pendingNoteContent = null;
-		selectedLinks = [];
+		resetLinkSelectionState();
 		isAutoInboxFlushing = false;
 		clearPendingLinkDecision();
 	}

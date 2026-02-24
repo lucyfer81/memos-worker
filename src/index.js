@@ -2101,54 +2101,284 @@ async function handleMergeNotes(request, env) {
 	}
 }
 
-/**
- * 获取卡片的所有标签
- */
-async function getNoteTags(noteId, db) {
-	const { results } = await db.prepare(`
-		SELECT t.name FROM tags t
-		JOIN note_tags nt ON t.id = nt.tag_id
-		WHERE nt.note_id = ?
-	`).bind(noteId).all();
-	return results.map(r => r.name);
+function parsePositiveInt(rawValue, fallback = 10, max = 50) {
+	const parsed = parseInt(rawValue, 10);
+	if (!Number.isFinite(parsed)) {
+		return fallback;
+	}
+	return Math.min(Math.max(parsed, 1), max);
+}
+
+function escapeFtsTerm(term = '') {
+	return term.replace(/"/g, '""');
+}
+
+function buildFtsMatchQuery(text, options = {}) {
+	const {
+		maxTerms = 8,
+		operator = 'OR',
+		includePhrase = true
+	} = options;
+	const normalized = (text || '').replace(/\s+/g, ' ').trim();
+	if (!normalized || normalized.length < 2) {
+		return null;
+	}
+
+	const tokenized = normalized
+		.replace(/[`~!@$%^&*()_+\-=\[\]{};':"\\|,.<>/?]/g, ' ')
+		.split(/\s+/)
+		.map(token => token.replace(/^#+/, '').trim())
+		.filter(token => token.length >= 2 && !/^\d+$/.test(token));
+
+	const uniqueTokens = [];
+	const seen = new Set();
+	for (const token of tokenized) {
+		const lowered = token.toLowerCase();
+		if (seen.has(lowered)) {
+			continue;
+		}
+		seen.add(lowered);
+		uniqueTokens.push(lowered);
+		if (uniqueTokens.length >= maxTerms) {
+			break;
+		}
+	}
+
+	const parts = uniqueTokens.map(token => `"${escapeFtsTerm(token)}"*`);
+	if (includePhrase) {
+		parts.unshift(`"${escapeFtsTerm(normalized.slice(0, 80))}"*`);
+	}
+	if (parts.length === 0) {
+		return `"${escapeFtsTerm(normalized.slice(0, 80))}"*`;
+	}
+
+	const joiner = operator === 'AND' ? ' AND ' : ' OR ';
+	return parts.join(joiner);
+}
+
+function computeRecencyScore(updatedAt, now = Date.now()) {
+	const updated = Number(updatedAt);
+	if (!Number.isFinite(updated) || updated <= 0) {
+		return 0;
+	}
+	const ageDays = Math.max(0, (now - updated) / 86400000);
+	return 1 / (1 + ageDays / 7);
+}
+
+function mergeAndRankLinkSearchCandidates(ftsRows, fallbackRows, limit) {
+	const byId = new Map();
+
+	const upsertCandidate = (row) => {
+		const id = Number(row?.id);
+		if (!Number.isFinite(id)) {
+			return null;
+		}
+		if (!byId.has(id)) {
+			byId.set(id, {
+				id,
+				content: row.content || '',
+				updated_at: Number(row.updated_at) || 0,
+				ftsRank: Infinity,
+				fallbackRank: Infinity
+			});
+		}
+		return byId.get(id);
+	};
+
+	for (let i = 0; i < ftsRows.length; i++) {
+		const candidate = upsertCandidate(ftsRows[i]);
+		if (candidate) {
+			candidate.ftsRank = Math.min(candidate.ftsRank, i);
+		}
+	}
+	for (let i = 0; i < fallbackRows.length; i++) {
+		const candidate = upsertCandidate(fallbackRows[i]);
+		if (candidate) {
+			candidate.fallbackRank = Math.min(candidate.fallbackRank, i);
+		}
+	}
+
+	const now = Date.now();
+	const ftsDenominator = Math.max(ftsRows.length, 1);
+	const fallbackDenominator = Math.max(fallbackRows.length, 1);
+
+	return Array.from(byId.values())
+		.map(candidate => {
+			const ftsScore = candidate.ftsRank === Infinity
+				? 0
+				: (1 - (candidate.ftsRank / ftsDenominator)) * 2;
+			const fallbackScore = candidate.fallbackRank === Infinity
+				? 0
+				: (1 - (candidate.fallbackRank / fallbackDenominator));
+			const recencyScore = computeRecencyScore(candidate.updated_at, now) * 0.35;
+			const finalScore = ftsScore + fallbackScore + recencyScore;
+			return {
+				id: candidate.id,
+				content: candidate.content,
+				updated_at: candidate.updated_at,
+				score: Number(finalScore.toFixed(4))
+			};
+		})
+		.sort((a, b) => {
+			if (b.score !== a.score) {
+				return b.score - a.score;
+			}
+			return b.updated_at - a.updated_at;
+		})
+		.slice(0, limit)
+		.map(({ id, content, updated_at }) => ({ id, content, updated_at }));
+}
+
+function rankSimilarCandidates(tagRows, ftsRows, recentRows, limit) {
+	const byId = new Map();
+
+	const upsertCandidate = (row) => {
+		const id = Number(row?.id);
+		if (!Number.isFinite(id)) {
+			return null;
+		}
+		if (!byId.has(id)) {
+			byId.set(id, {
+				id,
+				content: row.content || '',
+				updated_at: Number(row.updated_at) || 0,
+				common_tags: 0,
+				tagRank: Infinity,
+				ftsRank: Infinity,
+				recentRank: Infinity
+			});
+		}
+		return byId.get(id);
+	};
+
+	for (let i = 0; i < tagRows.length; i++) {
+		const row = tagRows[i];
+		const candidate = upsertCandidate(row);
+		if (!candidate) {
+			continue;
+		}
+		candidate.common_tags = Math.max(candidate.common_tags, Number(row.common_tags) || 0);
+		candidate.tagRank = Math.min(candidate.tagRank, i);
+	}
+	for (let i = 0; i < ftsRows.length; i++) {
+		const candidate = upsertCandidate(ftsRows[i]);
+		if (candidate) {
+			candidate.ftsRank = Math.min(candidate.ftsRank, i);
+		}
+	}
+	for (let i = 0; i < recentRows.length; i++) {
+		const candidate = upsertCandidate(recentRows[i]);
+		if (candidate) {
+			candidate.recentRank = Math.min(candidate.recentRank, i);
+		}
+	}
+
+	const now = Date.now();
+	const tagDenominator = Math.max(tagRows.length, 1);
+	const ftsDenominator = Math.max(ftsRows.length, 1);
+	const recentDenominator = Math.max(recentRows.length, 1);
+
+	return Array.from(byId.values())
+		.map(candidate => {
+			const tagStrength = Math.min(candidate.common_tags, 4) * 1.4;
+			const tagRankBonus = candidate.tagRank === Infinity
+				? 0
+				: (1 - (candidate.tagRank / tagDenominator)) * 0.4;
+			const ftsStrength = candidate.ftsRank === Infinity
+				? 0
+				: (1 - (candidate.ftsRank / ftsDenominator)) * 1.8;
+			const recentBonus = candidate.recentRank === Infinity
+				? 0
+				: (1 - (candidate.recentRank / recentDenominator)) * 0.3;
+			const recencyScore = computeRecencyScore(candidate.updated_at, now) * 0.4;
+			const finalScore = tagStrength + tagRankBonus + ftsStrength + recentBonus + recencyScore;
+			return {
+				id: candidate.id,
+				content: candidate.content,
+				updated_at: candidate.updated_at,
+				common_tags: candidate.common_tags,
+				similarity_score: Number(finalScore.toFixed(4))
+			};
+		})
+		.sort((a, b) => {
+			if (b.similarity_score !== a.similarity_score) {
+				return b.similarity_score - a.similarity_score;
+			}
+			if (b.common_tags !== a.common_tags) {
+				return b.common_tags - a.common_tags;
+			}
+			return b.updated_at - a.updated_at;
+		})
+		.slice(0, limit);
 }
 
 /**
  * 计算并返回相似卡片推荐
  */
 async function findSimilarNotes(noteId, db, limit = 5) {
-	const note = await db.prepare("SELECT id, content FROM notes WHERE id = ?").bind(noteId).first();
-	if (!note) return [];
+	const sourceNoteId = Number(noteId);
+	if (!Number.isFinite(sourceNoteId)) {
+		return [];
+	}
 
-	const noteTags = await getNoteTags(noteId, db);
+	const note = await db.prepare("SELECT id, content FROM notes WHERE id = ?").bind(sourceNoteId).first();
+	if (!note) {
+		return [];
+	}
 
-	let query = `
-		SELECT n.id, n.content,
-			   COUNT(nt.tag_id) as common_tags
-		FROM notes n
-		JOIN note_tags nt ON n.id = nt.note_id
-		WHERE n.id != ?
+	const candidateLimit = Math.max(limit * 6, 24);
+	const ftsQuery = buildFtsMatchQuery(note.content || '', {
+		maxTerms: 8,
+		operator: 'OR',
+		includePhrase: false
+	});
+
+	const tagMatchesPromise = db.prepare(`
+		SELECT n.id, n.content, n.updated_at, COUNT(*) as common_tags
+		FROM note_tags source_tags
+		JOIN note_tags nt ON nt.tag_id = source_tags.tag_id
+		JOIN notes n ON n.id = nt.note_id
+		WHERE source_tags.note_id = ?
+		  AND n.id != ?
 		  AND NOT (
 			n.link_status = 'pending'
 			AND INSTR(LOWER(COALESCE(n.content, '')), '#inbox') > 0
 		  )
-	`;
-	const params = [noteId];
-
-	if (noteTags.length > 0) {
-		query += ` AND nt.tag_id IN (${noteTags.map(() => '?').join(',')})`;
-		params.push(...noteTags);
-	}
-
-	query += `
 		GROUP BY n.id
 		ORDER BY common_tags DESC, n.updated_at DESC
 		LIMIT ?
-	`;
-	params.push(limit);
+	`).bind(sourceNoteId, sourceNoteId, candidateLimit).all();
 
-	const { results } = await db.prepare(query).bind(...params).all();
-	return results;
+	const ftsMatchesPromise = ftsQuery
+		? db.prepare(`
+			SELECT n.id, n.content, n.updated_at, rank
+			FROM notes n
+			JOIN notes_fts fts ON n.id = fts.rowid
+			WHERE n.id != ?
+			  AND NOT (
+				n.link_status = 'pending'
+				AND INSTR(LOWER(COALESCE(n.content, '')), '#inbox') > 0
+			  )
+			  AND notes_fts MATCH ?
+			ORDER BY rank
+			LIMIT ?
+		`).bind(sourceNoteId, ftsQuery, candidateLimit).all()
+		: Promise.resolve({ results: [] });
+
+	const recentPromise = getRecentNotes(sourceNoteId, db, candidateLimit);
+
+	const [tagMatches, ftsMatches, recentMatches] = await Promise.all([
+		tagMatchesPromise,
+		ftsMatchesPromise,
+		recentPromise
+	]);
+
+	return rankSimilarCandidates(
+		tagMatches.results || [],
+		ftsMatches.results || [],
+		recentMatches || [],
+		limit
+	);
 }
 
 /**
@@ -2175,33 +2405,70 @@ async function getRecentNotes(noteId, db, limit = 5) {
 async function handleSearchForLinking(request, env) {
 	const db = env.DB;
 	const { searchParams } = new URL(request.url);
-	const query = searchParams.get('q');
-	const excludeId = searchParams.get('excludeId');
-	const limit = parseInt(searchParams.get('limit') || '10');
+	const query = (searchParams.get('q') || '').trim();
+	const excludeIdRaw = searchParams.get('excludeId');
+	const excludeId = Number.parseInt(excludeIdRaw || '', 10);
+	const safeExcludeId = Number.isFinite(excludeId) ? excludeId : -1;
+	const limit = parsePositiveInt(searchParams.get('limit'), 10, 50);
 
-	if (!query || query.trim().length < 2) {
+	if (query.length < 2) {
 		return jsonResponse({ suggestions: [], recent: [] });
 	}
 
 	try {
-		const { results: suggestions } = await db.prepare(`
-			SELECT id, content, updated_at
-			FROM notes
-			WHERE id != ?
-			  AND NOT (
-				link_status = 'pending'
-				AND INSTR(LOWER(COALESCE(content, '')), '#inbox') > 0
-			  )
-			  AND (content LIKE ? OR id IN (
-				SELECT note_id FROM note_tags nt
-				JOIN tags t ON nt.tag_id = t.id
-				WHERE t.name LIKE ?
-			  ))
-			ORDER BY updated_at DESC
-			LIMIT ?
-		`).bind(excludeId, `%${query}%`, `%${query}%`, limit).all();
+		const candidateLimit = Math.max(limit * 3, 30);
+		const ftsQuery = buildFtsMatchQuery(query, {
+			maxTerms: 6,
+			operator: 'AND',
+			includePhrase: true
+		});
 
-		const recent = await getRecentNotes(excludeId, db, 5);
+		const ftsPromise = ftsQuery
+			? db.prepare(`
+				SELECT n.id, n.content, n.updated_at, rank
+				FROM notes n
+				JOIN notes_fts fts ON n.id = fts.rowid
+				WHERE n.id != ?
+				  AND NOT (
+					n.link_status = 'pending'
+					AND INSTR(LOWER(COALESCE(n.content, '')), '#inbox') > 0
+				  )
+				  AND notes_fts MATCH ?
+				ORDER BY rank
+				LIMIT ?
+			`).bind(safeExcludeId, ftsQuery, candidateLimit).all()
+			: Promise.resolve({ results: [] });
+
+		const fallbackPromise = db.prepare(`
+			SELECT n.id, n.content, n.updated_at
+			FROM notes n
+			LEFT JOIN note_tags nt ON n.id = nt.note_id
+			LEFT JOIN tags t ON nt.tag_id = t.id
+			WHERE n.id != ?
+			  AND NOT (
+				n.link_status = 'pending'
+				AND INSTR(LOWER(COALESCE(n.content, '')), '#inbox') > 0
+			  )
+			  AND (
+				n.content LIKE ?
+				OR t.name LIKE ?
+			  )
+			GROUP BY n.id
+			ORDER BY n.updated_at DESC
+			LIMIT ?
+		`).bind(safeExcludeId, `%${query}%`, `%${query}%`, candidateLimit).all();
+
+		const [ftsResult, fallbackResult, recent] = await Promise.all([
+			ftsPromise,
+			fallbackPromise,
+			getRecentNotes(safeExcludeId, db, 5)
+		]);
+
+		const suggestions = mergeAndRankLinkSearchCandidates(
+			ftsResult.results || [],
+			fallbackResult.results || [],
+			limit
+		);
 
 		return jsonResponse({ suggestions, recent });
 	} catch (e) {
@@ -2272,6 +2539,7 @@ async function handleGetBacklinks(request, noteId, env) {
 async function handleCreateLinks(request, noteId, env) {
 	const db = env.DB;
 	const fromId = parseInt(noteId);
+	const allowedLinkTypes = new Set(['related', 'supports', 'contradicts', 'expands']);
 
 	if (isNaN(fromId)) {
 		return jsonResponse({ error: 'Invalid Note ID' }, 400);
@@ -2291,9 +2559,18 @@ async function handleCreateLinks(request, noteId, env) {
 		const createdLinks = [];
 
 		for (const link of links) {
-			const { toId, linkType = 'related' } = link;
+			const toId = parseInt(link?.toId, 10);
+			const rawLinkType = typeof link?.linkType === 'string' ? link.linkType.trim().toLowerCase() : 'related';
+			const linkType = allowedLinkTypes.has(rawLinkType) ? rawLinkType : null;
 
-			if (!toId || toId === fromId) continue;
+			if (!linkType) {
+				return jsonResponse({
+					error: 'Invalid link type value',
+					code: 'INVALID_LINK_TYPE'
+				}, 400);
+			}
+
+			if (isNaN(toId) || toId === fromId) continue;
 
 			try {
 				const stmt = db.prepare(`
