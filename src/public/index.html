@@ -550,19 +550,6 @@
 	color: var(--text-color);
   }
 
-  .folder-input-row .folder-manage-btn {
-	padding: 6px 10px;
-	font-size: 0.85rem;
-	background: transparent;
-	color: var(--text-secondary);
-	border: 1px solid var(--border-color);
-  }
-
-  .folder-input-row .folder-manage-btn:hover {
-	color: var(--text-color);
-	background: var(--border-color);
-  }
-
   .file-list-display .file-tag {
 	display: inline-flex;
 	align-items: center;
@@ -2324,6 +2311,11 @@
 	background-size: 1em;
   }
 
+  #fs-folder-select {
+	min-width: 140px;
+	max-width: 260px;
+  }
+
   #fs-color-popover {
 	top: calc(100% + 8px);
 	left: 0;
@@ -3409,7 +3401,6 @@
 					<div class='folder-input-row'>
 						<label for='note-folder-select'>Folder</label>
 						<select id='note-folder-select'></select>
-						<button type='button' id='manage-folders-btn' class='folder-manage-btn'>Manage</button>
 					</div>
 
 					<div class='form-actions'>
@@ -3685,6 +3676,7 @@
 					<input type="checkbox" id="fs-update-timestamp-toggle">
 					<span>Keep Time</span>
 				</label>
+				<select id='fs-folder-select' class='toolbar-selector' title='Folder'></select>
 				<button id='view-mode-split-btn' class='icon-btn' title='Split View'>
 					<svg xmlns='http://www.w3.org/2000/svg' height='24px' viewBox='0 0 24 24' width='24px' fill='currentColor'>
 						<path d='M0 0h24v24H0V0z' fill='none' />
@@ -4371,6 +4363,7 @@
 
 	// --- 富文本编辑相关元素 ---
 	const fsFontsizeSelector = document.getElementById('fs-fontsize-selector');
+	const fsFolderSelect = document.getElementById('fs-folder-select');
 	const fsFontcolorBtn = document.getElementById('fs-fontcolor-btn');
 	const fsColorPickerWrapper = document.getElementById('fs-color-picker-wrapper');
 	const fsColorPopover = document.getElementById('fs-color-popover');
@@ -6028,6 +6021,14 @@
 		currentEditingNoteId = noteId;
 		fsEditorTextarea.value = content;
 		fsPreviewPane.innerHTML = postProcessMarkdownHtml(marked.parse(content));
+		const editingNote = noteId !== null
+			? allNotesCache.find(note => note.id === parseInt(noteId, 10))
+			: null;
+		const defaultFolder = noteId === null
+			? normalizeFolderPath(noteFolderSelect.value || appState.filters.folder || 'Inbox')
+			: normalizeFolderPath(editingNote?.folder || 'Inbox');
+		const fullscreenFolder = normalizeFolderPath(options.folderPath || defaultFolder);
+		renderFolderSelectOptions(fsFolderSelect, fullscreenFolder);
 
 		const timestampLabel = document.getElementById('fs-timestamp-label');
 		const timestampToggle = document.getElementById('fs-update-timestamp-toggle');
@@ -6082,7 +6083,9 @@
 	// 点击主创建区的全屏按钮
 	enterFullscreenBtn.addEventListener('click', () => {
 		// 将主输入框的内容带入全屏编辑器
-		openFullscreenEditor(noteInput.value, null);
+		openFullscreenEditor(noteInput.value, null, {
+			folderPath: normalizeFolderPath(noteFolderSelect.value || appState.filters.folder || 'Inbox')
+		});
 	});
 	let isDragging = false;
 	fsEditorDivider.addEventListener('mousedown', (e) => {
@@ -6261,6 +6264,7 @@
 	fsCancelBtn.addEventListener('click', closeFullscreenEditor);
 	fsSaveBtn.addEventListener('click', async () => {
 		const content = fsEditorTextarea.value;
+		const normalizedFolderForFullscreen = normalizeFolderPath(fsFolderSelect.value || noteFolderSelect.value || appState.filters.folder || 'Inbox');
 		fsSaveBtn.disabled = true;
 		fsSaveBtn.textContent = 'Saving...';
 
@@ -6279,6 +6283,7 @@
 				const formData = new FormData();
 				// 1. 添加從全屏編輯器獲取的新文本內容
 				formData.append('content', content);
+				formData.append('folder', normalizedFolderForFullscreen);
 				// 2. 從主界面的 noteFile 輸入框中獲取文件並添加到 formData
 				Array.from(noteFile.files).forEach(file => {
 					formData.append('file', file);
@@ -6315,8 +6320,10 @@
 				fsSaveBtn.disabled = true;
 				fsSaveBtn.textContent = 'Saving...';
 				const formData = new FormData();
+				const normalizedFolderForEdit = normalizeFolderPath(fsFolderSelect.value || 'Inbox');
 				// 1. 添加从全屏编辑器获取的新内容
 				formData.append('content', content);
+				formData.append('folder', normalizedFolderForEdit);
 				const timestampToggle = document.getElementById('fs-update-timestamp-toggle');
 				// 如果勾选了 "Keep Time"，则 shouldUpdate 为 false
 				const shouldUpdate = !timestampToggle.checked;
@@ -6330,6 +6337,11 @@
 				// 获取新添加的文件 (如果用户先添加文件再进入全屏)
 				if (noteElement.newFiles && noteElement.newFiles.length > 0) {
 					Array.from(noteElement.newFiles).forEach(file => formData.append('file', file));
+				}
+				const inlineEditFolderSelect = noteElement.querySelector('.edit-folder-select');
+				if (inlineEditFolderSelect) {
+					inlineEditFolderSelect.dataset.folderPath = normalizedFolderForEdit;
+					inlineEditFolderSelect.value = normalizedFolderForEdit;
 				}
 
 				try {
@@ -8573,10 +8585,12 @@
 		if (fullscreenEditBtn) {
 			// 从当前笔记的 DOM 元素中找到正在编辑的 textarea
 			const editTextarea = noteElement.querySelector('.edit-textarea');
+			const editFolderSelect = noteElement.querySelector('.edit-folder-select');
 			// 获取 textarea 中最新的、可能尚未保存的内容
 			const currentContent = editTextarea.value;
+			const currentFolder = normalizeFolderPath(editFolderSelect?.value || noteData?.folder || 'Inbox');
 			// 使用这个最新的内容打开全屏编辑器
-			openFullscreenEditor(currentContent, noteId);
+			openFullscreenEditor(currentContent, noteId, { folderPath: currentFolder });
 		} else if (editBtn) {
 			noteElement.classList.add('editing');
 			// 初始化为编辑模式 (raw)
@@ -9168,16 +9182,10 @@
 
 	const clearFolderBtn = document.getElementById('clear-folder-filter-btn');
 	const createFolderBtn = document.getElementById('create-folder-btn');
-	const manageFoldersBtn = document.getElementById('manage-folders-btn');
 	createFolderBtn.addEventListener('click', () => {
 		const seedPath = appState.filters.folder
 			? `${normalizeFolderPath(appState.filters.folder)}/`
 			: '';
-		promptCreateFolder(seedPath);
-	});
-	manageFoldersBtn.addEventListener('click', () => {
-		const currentPath = normalizeFolderPath(noteFolderSelect.value || 'Inbox');
-		const seedPath = currentPath === 'Inbox' ? '' : `${currentPath}/`;
 		promptCreateFolder(seedPath);
 	});
 
