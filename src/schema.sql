@@ -93,6 +93,12 @@ BEGIN
   UPDATE notes SET link_status = 'linked' WHERE id = NEW.from_id;
 END;
 
+CREATE TRIGGER update_link_status_after_link_update
+AFTER UPDATE ON note_links
+BEGIN
+  UPDATE notes SET link_status = 'linked' WHERE id = NEW.from_id;
+END;
+
 CREATE TRIGGER update_link_status_after_unlink
 AFTER DELETE ON note_links
 BEGIN

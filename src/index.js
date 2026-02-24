@@ -2593,6 +2593,16 @@ async function handleCreateLinks(request, noteId, env) {
 			}
 		}
 
+		// UPSERT 的冲突更新路径不会触发 note_links 的 INSERT 触发器，
+		// 这里显式兜底为 linked，避免“已有关联但仍 pending”。
+		if (createdLinks.length > 0) {
+			await db.prepare(`
+				UPDATE notes
+				SET link_status = 'linked'
+				WHERE id = ?
+			`).bind(fromId).run();
+		}
+
 		return jsonResponse({ success: true, links: createdLinks });
 	} catch (e) {
 		console.error("Create Links Error:", e.message);
@@ -2661,7 +2671,18 @@ async function handleSetInboxStatus(noteId, inInbox, env) {
 		const nextContent = inInbox
 			? addInboxTagToContent(note.content || '')
 			: removeInboxTagFromContent(note.content || '');
-		const nextStatus = inInbox ? 'pending' : note.link_status;
+		let nextStatus = inInbox ? 'pending' : note.link_status;
+		if (!inInbox && nextStatus === 'pending') {
+			const linkCountResult = await db.prepare(`
+				SELECT COUNT(*) AS count
+				FROM note_links
+				WHERE from_id = ?
+			`).bind(id).first();
+			const outgoingLinksCount = Number(linkCountResult?.count || 0);
+			if (outgoingLinksCount > 0) {
+				nextStatus = 'linked';
+			}
+		}
 
 		const contentChanged = nextContent !== (note.content || '');
 		const statusChanged = nextStatus !== note.link_status;
