@@ -25,6 +25,80 @@ function normalizeNoteFolder(note) {
 	return note;
 }
 
+function folderPathKey(value) {
+	return normalizeFolderName(value).toLowerCase();
+}
+
+function getFolderAncestorPaths(folderPath) {
+	const normalizedPath = normalizeFolderName(folderPath);
+	const segments = normalizedPath.split('/').filter(Boolean);
+	const paths = [];
+	for (let i = 0; i < segments.length; i++) {
+		paths.push(segments.slice(0, i + 1).join('/'));
+	}
+	return paths;
+}
+
+function isFolderInSubtree(path, rootPath) {
+	const pathKey = folderPathKey(path);
+	const rootKey = folderPathKey(rootPath);
+	return pathKey === rootKey || pathKey.startsWith(`${rootKey}/`);
+}
+
+function replaceFolderPrefix(path, fromPath, toPath) {
+	const normalizedPath = normalizeFolderName(path);
+	const normalizedFrom = normalizeFolderName(fromPath);
+	const normalizedTo = normalizeFolderName(toPath);
+	const pathKey = normalizedPath.toLowerCase();
+	const fromKey = normalizedFrom.toLowerCase();
+
+	if (pathKey === fromKey) {
+		return normalizedTo;
+	}
+	if (pathKey.startsWith(`${fromKey}/`)) {
+		return `${normalizedTo}${normalizedPath.slice(normalizedFrom.length)}`;
+	}
+	return normalizedPath;
+}
+
+async function createFolderPathIfMissing(db, folderPath, timestamp = Date.now()) {
+	const normalizedPath = normalizeFolderName(folderPath);
+	await db.prepare(`
+		INSERT INTO folders (path, created_at, updated_at)
+		SELECT ?, ?, ?
+		WHERE NOT EXISTS (
+			SELECT 1 FROM folders WHERE LOWER(path) = LOWER(?)
+		)
+	`).bind(normalizedPath, timestamp, timestamp, normalizedPath).run();
+}
+
+async function ensureFolderPathExists(db, folderPath) {
+	const timestamp = Date.now();
+	const ancestorPaths = getFolderAncestorPaths(folderPath);
+	for (const path of ancestorPaths) {
+		await createFolderPathIfMissing(db, path, timestamp);
+	}
+}
+
+async function seedFoldersFromNotes(db) {
+	const stmt = db.prepare(`
+		SELECT DISTINCT COALESCE(NULLIF(TRIM(folder), ''), ?) AS folder_name
+		FROM notes
+	`);
+	const { results } = await stmt.bind(DEFAULT_FOLDER_NAME).all();
+	for (const row of (results || [])) {
+		await ensureFolderPathExists(db, normalizeFolderName(row.folder_name));
+	}
+}
+
+async function parseJsonBody(request) {
+	try {
+		return { ok: true, data: await request.json() };
+	} catch (_e) {
+		return { ok: false, data: null };
+	}
+}
+
 function isDuplicateColumnError(error, columnName) {
 	const message = (error && error.message) ? String(error.message).toLowerCase() : '';
 	return message.includes('duplicate column name') && message.includes(String(columnName).toLowerCase());
@@ -54,6 +128,27 @@ async function ensureFolderSchema(db) {
 				}
 			}
 			await db.prepare("CREATE INDEX IF NOT EXISTS idx_notes_folder ON notes(folder)").run();
+			await db.prepare(`
+				CREATE TABLE IF NOT EXISTS folders (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					path TEXT NOT NULL UNIQUE,
+					created_at INTEGER NOT NULL,
+					updated_at INTEGER NOT NULL
+				)
+			`).run();
+			await db.prepare("DELETE FROM folders WHERE path IS NULL OR TRIM(path) = ''").run();
+			await db.prepare(`
+				DELETE FROM folders
+				WHERE id NOT IN (
+					SELECT MIN(id) FROM folders GROUP BY LOWER(path)
+				)
+			`).run();
+			await db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_folders_path_lower ON folders(LOWER(path))").run();
+			await db.prepare("UPDATE notes SET folder = ? WHERE folder IS NULL OR TRIM(folder) = ''")
+				.bind(DEFAULT_FOLDER_NAME)
+				.run();
+			await seedFoldersFromNotes(db);
+			await ensureFolderPathExists(db, DEFAULT_FOLDER_NAME);
 			folderSchemaReady = true;
 		})().catch((e) => {
 			folderSchemaInitPromise = null;
@@ -217,7 +312,19 @@ async function handleApiRequest(request, env) {
 		return handleTagsList(request, env);
 	}
 	if (pathname === '/api/folders') {
-		return handleFoldersList(request, env);
+		if (request.method === 'GET') {
+			return handleFoldersList(request, env);
+		}
+		if (request.method === 'POST') {
+			return handleFoldersCreate(request, env);
+		}
+		if (request.method === 'PATCH') {
+			return handleFoldersRename(request, env);
+		}
+		if (request.method === 'DELETE') {
+			return handleFoldersDelete(request, env);
+		}
+		return jsonResponse({ error: 'Method Not Allowed' }, 405);
 	}
 	const fileMatch = pathname.match(/^\/api\/files\/([^\/]+)\/([^\/]+)$/);
 	if (fileMatch) {
@@ -491,21 +598,215 @@ async function handleFoldersList(request, env) {
 	try {
 		await ensureFolderSchema(db);
 		const stmt = db.prepare(`
-			WITH normalized AS (
-				SELECT COALESCE(NULLIF(TRIM(folder), ''), ?) AS folder_name
-				FROM notes
-				WHERE is_archived = 0
-			)
-			SELECT MIN(folder_name) AS name, COUNT(*) AS count
-			FROM normalized
-			GROUP BY LOWER(folder_name)
-			ORDER BY count DESC, name COLLATE NOCASE ASC
+			SELECT
+				f.path AS name,
+				COUNT(n.id) AS count
+			FROM folders f
+			LEFT JOIN notes n
+				ON LOWER(COALESCE(NULLIF(TRIM(n.folder), ''), ?)) = LOWER(f.path)
+				AND n.is_archived = 0
+			GROUP BY LOWER(f.path), f.path
+			ORDER BY
+				CASE WHEN LOWER(f.path) = LOWER(?) THEN 0 ELSE 1 END,
+				count DESC,
+				f.path COLLATE NOCASE ASC
 		`);
-		const { results } = await stmt.bind(DEFAULT_FOLDER_NAME).all();
+		const { results } = await stmt.bind(DEFAULT_FOLDER_NAME, DEFAULT_FOLDER_NAME).all();
 		return jsonResponse(results || []);
 	} catch (e) {
 		console.error("Folders List Error:", e.message);
 		return jsonResponse({ error: 'Database Error' }, 500);
+	}
+}
+
+async function handleFoldersCreate(request, env) {
+	const db = env.DB;
+	try {
+		await ensureFolderSchema(db);
+		const parsed = await parseJsonBody(request);
+		if (!parsed.ok) {
+			return jsonResponse({ error: 'Invalid JSON body' }, 400);
+		}
+		const payload = parsed.data;
+		const pathInput = payload?.path ?? payload?.name;
+		if (!pathInput || !String(pathInput).trim()) {
+			return jsonResponse({ error: 'Folder path is required' }, 400);
+		}
+
+		const normalizedPath = normalizeFolderName(pathInput);
+		const existing = await db.prepare("SELECT path FROM folders WHERE LOWER(path) = LOWER(?)")
+			.bind(normalizedPath)
+			.first();
+		await ensureFolderPathExists(db, normalizedPath);
+		if (existing) {
+			return jsonResponse({ success: true, path: existing.path, existed: true });
+		}
+		return jsonResponse({ success: true, path: normalizedPath, existed: false }, 201);
+	} catch (e) {
+		console.error("Folders Create Error:", e.message);
+		return jsonResponse({ error: 'Database Error', message: e.message }, 500);
+	}
+}
+
+async function handleFoldersRename(request, env) {
+	const db = env.DB;
+	try {
+		await ensureFolderSchema(db);
+		const parsed = await parseJsonBody(request);
+		if (!parsed.ok) {
+			return jsonResponse({ error: 'Invalid JSON body' }, 400);
+		}
+		const payload = parsed.data;
+		const fromPathRaw = payload?.fromPath ?? payload?.from;
+		const toPathRaw = payload?.toPath ?? payload?.to;
+		if (!fromPathRaw || !toPathRaw) {
+			return jsonResponse({ error: 'fromPath and toPath are required' }, 400);
+		}
+
+		const fromPath = normalizeFolderName(fromPathRaw);
+		const toPath = normalizeFolderName(toPathRaw);
+		const fromKey = folderPathKey(fromPath);
+		const toKey = folderPathKey(toPath);
+		const defaultKey = folderPathKey(DEFAULT_FOLDER_NAME);
+
+		if (fromKey === defaultKey) {
+			return jsonResponse({ error: 'Inbox cannot be renamed' }, 400);
+		}
+		if (toKey === defaultKey) {
+			return jsonResponse({ error: 'Cannot rename folder to Inbox' }, 400);
+		}
+		if (toKey.startsWith(`${fromKey}/`)) {
+			return jsonResponse({ error: 'Cannot move a folder into its own subtree' }, 400);
+		}
+
+		const { results: folderRows } = await db.prepare("SELECT path FROM folders").all();
+		const allPaths = (folderRows || []).map(row => normalizeFolderName(row.path));
+		const subtreePaths = allPaths.filter(path => isFolderInSubtree(path, fromPath));
+		if (!subtreePaths.length) {
+			return jsonResponse({ error: 'Folder not found' }, 404);
+		}
+		if (fromKey === toKey) {
+			return jsonResponse({ success: true, fromPath, toPath });
+		}
+
+		const subtreePathKeys = new Set(subtreePaths.map(path => folderPathKey(path)));
+		const outsidePathKeys = new Set(
+			allPaths
+				.map(path => folderPathKey(path))
+				.filter(pathKey => !subtreePathKeys.has(pathKey))
+		);
+
+		const remappedPaths = subtreePaths.map(path => replaceFolderPrefix(path, fromPath, toPath));
+		const remappedPathKeys = new Set();
+		for (const remappedPath of remappedPaths) {
+			const remappedKey = folderPathKey(remappedPath);
+			if (outsidePathKeys.has(remappedKey)) {
+				return jsonResponse({ error: `Folder path conflict: ${remappedPath}` }, 409);
+			}
+			if (remappedPathKeys.has(remappedKey)) {
+				return jsonResponse({ error: `Duplicate folder path after rename: ${remappedPath}` }, 409);
+			}
+			remappedPathKeys.add(remappedKey);
+		}
+
+		const toAncestors = getFolderAncestorPaths(toPath);
+		for (const ancestorPath of toAncestors.slice(0, -1)) {
+			await ensureFolderPathExists(db, ancestorPath);
+		}
+
+		const now = Date.now();
+		const sortedSubtreePaths = [...subtreePaths].sort((a, b) => a.length - b.length);
+		for (const oldPath of sortedSubtreePaths) {
+			const newPath = replaceFolderPrefix(oldPath, fromPath, toPath);
+			await db.prepare("UPDATE folders SET path = ?, updated_at = ? WHERE LOWER(path) = LOWER(?)")
+				.bind(newPath, now, oldPath)
+				.run();
+		}
+
+		await db.prepare(`
+			UPDATE notes
+			SET folder = CASE
+				WHEN LOWER(COALESCE(NULLIF(TRIM(folder), ''), ?)) = LOWER(?) THEN ?
+				ELSE ? || SUBSTR(COALESCE(NULLIF(TRIM(folder), ''), ?), LENGTH(?) + 1)
+			END
+			WHERE
+				LOWER(COALESCE(NULLIF(TRIM(folder), ''), ?)) = LOWER(?)
+				OR LOWER(COALESCE(NULLIF(TRIM(folder), ''), ?)) LIKE LOWER(?)
+		`).bind(
+			DEFAULT_FOLDER_NAME, fromPath, toPath,
+			toPath, DEFAULT_FOLDER_NAME, fromPath,
+			DEFAULT_FOLDER_NAME, fromPath,
+			DEFAULT_FOLDER_NAME, `${fromPath}/%`
+		).run();
+
+		await ensureFolderPathExists(db, toPath);
+		return jsonResponse({
+			success: true,
+			fromPath,
+			toPath,
+			updatedFolders: sortedSubtreePaths.length
+		});
+	} catch (e) {
+		console.error("Folders Rename Error:", e.message);
+		return jsonResponse({ error: 'Database Error', message: e.message }, 500);
+	}
+}
+
+async function handleFoldersDelete(request, env) {
+	const db = env.DB;
+	try {
+		await ensureFolderSchema(db);
+		const parsed = await parseJsonBody(request);
+		if (!parsed.ok) {
+			return jsonResponse({ error: 'Invalid JSON body' }, 400);
+		}
+		const payload = parsed.data;
+		const pathInput = payload?.path;
+		if (!pathInput || !String(pathInput).trim()) {
+			return jsonResponse({ error: 'Folder path is required' }, 400);
+		}
+
+		const normalizedPath = normalizeFolderName(pathInput);
+		const normalizedKey = folderPathKey(normalizedPath);
+		if (normalizedKey === folderPathKey(DEFAULT_FOLDER_NAME)) {
+			return jsonResponse({ error: 'Inbox cannot be deleted' }, 400);
+		}
+
+		const subtreeProbe = await db.prepare(`
+			SELECT COUNT(*) AS total
+			FROM folders
+			WHERE LOWER(path) = LOWER(?) OR LOWER(path) LIKE LOWER(?)
+		`).bind(normalizedPath, `${normalizedPath}/%`).first();
+		if (!subtreeProbe || Number(subtreeProbe.total || 0) === 0) {
+			return jsonResponse({ error: 'Folder not found' }, 404);
+		}
+
+		await db.prepare(`
+			UPDATE notes
+			SET folder = ?
+			WHERE
+				LOWER(COALESCE(NULLIF(TRIM(folder), ''), ?)) = LOWER(?)
+				OR LOWER(COALESCE(NULLIF(TRIM(folder), ''), ?)) LIKE LOWER(?)
+		`).bind(
+			DEFAULT_FOLDER_NAME,
+			DEFAULT_FOLDER_NAME, normalizedPath,
+			DEFAULT_FOLDER_NAME, `${normalizedPath}/%`
+		).run();
+
+		await db.prepare(`
+			DELETE FROM folders
+			WHERE LOWER(path) = LOWER(?) OR LOWER(path) LIKE LOWER(?)
+		`).bind(normalizedPath, `${normalizedPath}/%`).run();
+
+		await ensureFolderPathExists(db, DEFAULT_FOLDER_NAME);
+		return jsonResponse({
+			success: true,
+			deletedPath: normalizedPath,
+			movedTo: DEFAULT_FOLDER_NAME
+		});
+	} catch (e) {
+		console.error("Folders Delete Error:", e.message);
+		return jsonResponse({ error: 'Database Error', message: e.message }, 500);
 	}
 }
 
@@ -716,6 +1017,7 @@ async function handleNotesList(request, env) {
 				if (!content.trim() && files.every(f => !f.name)) {
 					return jsonResponse({ error: 'Content or file is required.' }, 400);
 				}
+				await ensureFolderPathExists(db, folderName);
 
 				const now = Date.now();
 				const filesMeta = [];
@@ -834,6 +1136,7 @@ async function handleNoteDetail(request, noteId, env) {
 						// 3. 返回特殊标记，告知前端整个笔记已被删除
 						return jsonResponse({ success: true, noteDeleted: true });
 					}
+					await ensureFolderPathExists(db, folderName);
 					// 处理新附件上传
 					const newFiles = formData.getAll('file');
 					for (const file of newFiles) {
@@ -860,6 +1163,7 @@ async function handleNoteDetail(request, noteId, env) {
 				}
 				if (formData.has('folder') && !formData.has('content')) {
 					const folderName = normalizeFolderName(formData.get('folder'));
+					await ensureFolderPathExists(db, folderName);
 					const stmt = db.prepare("UPDATE notes SET folder = ? WHERE id = ?");
 					await stmt.bind(folderName, id).run();
 				}

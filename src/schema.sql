@@ -20,6 +20,15 @@ CREATE TABLE notes (
 
 CREATE INDEX idx_notes_folder ON notes(folder);
 
+CREATE TABLE folders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  path TEXT NOT NULL UNIQUE,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX idx_folders_path_lower ON folders(LOWER(path));
+
 CREATE TABLE note_tags (
   note_id INTEGER NOT NULL,
   tag_id INTEGER NOT NULL,

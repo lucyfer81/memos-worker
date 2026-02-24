@@ -513,7 +513,7 @@
 	font-family: -apple-system, 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', sans-serif;
   }
 
-  .auth-form input:focus, textarea:focus {
+  .auth-form input:focus, textarea:focus, .folder-input-row select:focus, .edit-folder-select:focus {
 	border-color: var(--primary-color);
 	outline: none;
 	box-shadow: 0 0 0 3px rgba(54, 124, 255, 0.15);
@@ -540,7 +540,7 @@
 	min-width: 52px;
   }
 
-  .folder-input-row input {
+  .folder-input-row select {
 	flex: 1;
 	margin-bottom: 0;
 	padding: 8px 10px;
@@ -548,6 +548,19 @@
 	border: 1px solid var(--border-color);
 	background: var(--bg-color);
 	color: var(--text-color);
+  }
+
+  .folder-input-row .folder-manage-btn {
+	padding: 6px 10px;
+	font-size: 0.85rem;
+	background: transparent;
+	color: var(--text-secondary);
+	border: 1px solid var(--border-color);
+  }
+
+  .folder-input-row .folder-manage-btn:hover {
+	color: var(--text-color);
+	background: var(--border-color);
   }
 
   .file-list-display .file-tag {
@@ -2456,7 +2469,7 @@
 
   .folder-item {
 	display: grid;
-	grid-template-columns: 16px 1fr auto;
+	grid-template-columns: 16px 1fr auto auto;
 	align-items: center;
 	gap: 0.4rem;
 	padding: 6px 8px;
@@ -2499,7 +2512,7 @@
   }
 
   .folder-item.is-leaf {
-	grid-template-columns: 16px 1fr auto;
+	grid-template-columns: 16px 1fr auto auto;
   }
 
   .folder-label {
@@ -2523,6 +2536,55 @@
   .folder-item.active .folder-count {
 	background-color: rgba(255, 255, 255, 0.2);
 	color: white;
+  }
+
+  .folder-item-actions {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.15rem;
+	opacity: 0;
+	transition: opacity 0.15s ease;
+  }
+
+  .folder-item:hover .folder-item-actions,
+  .folder-item.active .folder-item-actions {
+	opacity: 1;
+  }
+
+  .folder-action-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 18px;
+	height: 18px;
+	padding: 0;
+	border: none;
+	background: transparent;
+	color: inherit;
+	cursor: pointer;
+	opacity: 0.75;
+	transform: none;
+  }
+
+  .folder-action-btn:hover {
+	background: rgba(127, 127, 127, 0.2);
+	opacity: 1;
+	transform: none;
+  }
+
+  .folder-item.active .folder-action-btn:hover {
+	background: rgba(255, 255, 255, 0.2);
+  }
+
+  .folder-action-btn:disabled {
+	opacity: 0.35;
+	cursor: not-allowed;
+	background: transparent;
+  }
+
+  .folder-action-btn svg {
+	width: 14px;
+	height: 14px;
   }
 
   .folder-item-placeholder {
@@ -2892,9 +2954,9 @@
 	margin: 0;
   }
 
-  .edit-folder-input {
+  .edit-folder-select {
 	min-width: 110px;
-	max-width: 180px;
+	max-width: 220px;
 	padding: 4px 8px;
 	font-size: 0.8rem;
 	border: 1px solid var(--border-color);
@@ -3254,6 +3316,12 @@
 				<span>Folders</span>
 				<div class='sidebar-header-actions'>
 					<button id='clear-folder-filter-btn' class='icon-btn' title='Clear folder filter'></button>
+					<button id='create-folder-btn' class='icon-btn' title='Create folder'>
+						<svg xmlns='http://www.w3.org/2000/svg' height='24px' viewBox='0 0 24 24' width='24px' fill='currentColor'>
+							<path d='M0 0h24v24H0V0z' fill='none' />
+							<path d='M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z' />
+						</svg>
+					</button>
 					<button class='sidebar-toggle-btn' data-target='folders-container'>
 						<svg class='toggle-icon' xmlns='http://www.w3.org/2000/svg' height='24px' viewBox='0 0 24 24' width='24px'
 								 fill='currentColor'>
@@ -3339,8 +3407,9 @@
 						<div id='main-edit-preview' class='edit-preview note-content'></div>
 					</div>
 					<div class='folder-input-row'>
-						<label for='note-folder-input'>Folder</label>
-						<input type='text' id='note-folder-input' placeholder='Inbox'>
+						<label for='note-folder-select'>Folder</label>
+						<select id='note-folder-select'></select>
+						<button type='button' id='manage-folders-btn' class='folder-manage-btn'>Manage</button>
 					</div>
 
 					<div class='form-actions'>
@@ -4196,7 +4265,7 @@
 	const logoutBtn = document.getElementById('logout-btn');
 	const noteForm = document.getElementById('note-form');
 	const noteInput = document.getElementById('note-input');
-	const noteFolderInput = document.getElementById('note-folder-input');
+	const noteFolderSelect = document.getElementById('note-folder-select');
 	const noteFile = document.getElementById('note-file');
 	const fileListDisplay = document.getElementById('file-list-display');
 	const notesContainer = document.getElementById('notes-container');
@@ -7789,7 +7858,7 @@
 															<input type="checkbox" class="update-timestamp-toggle" checked>
 															<span>Keep Time</span>
 													</label>
-													<input type='text' class='edit-folder-input' value='${escapeHtml(folderName)}' title='Folder'>
+													<select class='edit-folder-select' title='Folder'></select>
 													<label class='icon-btn' title='Add files'>
 															<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='currentColor'><path d='M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z'></path></svg>
 															<input type='file' class='edit-file-input' multiple style='display:none;'>
@@ -7827,6 +7896,11 @@
 			noteElement.querySelector('.note-content.view-mode').classList.add('truncated');
 		}
 		noteElement.querySelector('.edit-textarea').value = note.content;
+		const editFolderSelect = noteElement.querySelector('.edit-folder-select');
+		if (editFolderSelect) {
+			editFolderSelect.dataset.folderPath = folderName;
+			renderFolderSelectOptions(editFolderSelect, folderName);
+		}
 
 		return noteElement;
 	}
@@ -8206,8 +8280,8 @@
 
 		const formData = new FormData();
 		formData.append('content', noteInput.value);
-		const normalizedFolderForCreate = normalizeFolderPath(noteFolderInput.value);
-		noteFolderInput.value = normalizedFolderForCreate === 'Inbox' ? '' : normalizedFolderForCreate;
+		const normalizedFolderForCreate = normalizeFolderPath(noteFolderSelect.value || appState.filters.folder || 'Inbox');
+		noteFolderSelect.value = normalizedFolderForCreate;
 		formData.append('folder', normalizedFolderForCreate);
 		Array.from(noteFile.files).forEach(file => {
 			if (!file.type.startsWith('image/')) {
@@ -8223,6 +8297,7 @@
 			mainEditPreview.innerHTML = '';
 			noteForm.classList.remove('preview-mode');
 			mainPreviewToggleBtn.classList.remove('active');
+			syncComposeFolderSelect(appState.filters.folder || 'Inbox');
 			autoResizeTextarea(noteInput);
 			updateMainFileDisplay();
 			await refreshNotes();
@@ -8243,7 +8318,7 @@
 			appState.filters.folder = null;
 			globalSearchInput.value = '';
 			clearSearchBtn.style.display = 'none';
-			noteFolderInput.value = '';
+			syncComposeFolderSelect('Inbox');
 
 			// 重置UI
 			document.querySelectorAll('.tag-item.active, .folder-item.active').forEach(i => i.classList.remove('active'));
@@ -8515,6 +8590,12 @@
 			const filesContainer = noteElement.querySelector('.edit-files-container');
 			filesContainer.innerHTML = '';
 			const editTextarea = noteElement.querySelector('.edit-textarea');
+			const editFolderSelect = noteElement.querySelector('.edit-folder-select');
+			if (editFolderSelect) {
+				const currentFolder = normalizeFolderPath(noteData.folder || 'Inbox');
+				editFolderSelect.dataset.folderPath = currentFolder;
+				renderFolderSelectOptions(editFolderSelect, currentFolder);
+			}
 			autoResizeTextarea(editTextarea);
 			noteData.files.forEach(file => filesContainer.appendChild(createFileTag(file.name, file.id)));
 
@@ -8539,9 +8620,11 @@
 				// 2. 将 textarea 的内容重置为原始文本
 				const editTextarea = noteElement.querySelector('.edit-textarea');
 				editTextarea.value = originalNoteData.content;
-				const editFolderInput = noteElement.querySelector('.edit-folder-input');
-				if (editFolderInput) {
-					editFolderInput.value = originalNoteData.folder || 'Inbox';
+				const editFolderSelect = noteElement.querySelector('.edit-folder-select');
+				if (editFolderSelect) {
+					const originalFolder = normalizeFolderPath(originalNoteData.folder || 'Inbox');
+					editFolderSelect.dataset.folderPath = originalFolder;
+					renderFolderSelectOptions(editFolderSelect, originalFolder);
 				}
 
 				// 3. 重置高度，以防文本变短后留下空白
@@ -8589,10 +8672,11 @@
 
 			const formData = new FormData();
 			formData.append('content', noteElement.querySelector('.edit-textarea').value.trim());
-			const editFolderInput = noteElement.querySelector('.edit-folder-input');
-			const normalizedFolderForEdit = normalizeFolderPath(editFolderInput?.value || '');
-			if (editFolderInput) {
-				editFolderInput.value = normalizedFolderForEdit;
+			const editFolderSelect = noteElement.querySelector('.edit-folder-select');
+			const normalizedFolderForEdit = normalizeFolderPath(editFolderSelect?.value || '');
+			if (editFolderSelect) {
+				editFolderSelect.dataset.folderPath = normalizedFolderForEdit;
+				editFolderSelect.value = normalizedFolderForEdit;
 			}
 			formData.append('folder', normalizedFolderForEdit);
 
@@ -8793,6 +8877,27 @@
 		rows: []
 	};
 
+	function isFolderInSubtree(path, rootPath) {
+		const normalizedPath = normalizeFolderPath(path).toLowerCase();
+		const normalizedRoot = normalizeFolderPath(rootPath).toLowerCase();
+		return normalizedPath === normalizedRoot || normalizedPath.startsWith(`${normalizedRoot}/`);
+	}
+
+	function replaceFolderPrefix(path, fromPath, toPath) {
+		const normalizedPath = normalizeFolderPath(path);
+		const normalizedFrom = normalizeFolderPath(fromPath);
+		const normalizedTo = normalizeFolderPath(toPath);
+		const normalizedPathKey = normalizedPath.toLowerCase();
+		const normalizedFromKey = normalizedFrom.toLowerCase();
+		if (normalizedPathKey === normalizedFromKey) {
+			return normalizedTo;
+		}
+		if (normalizedPathKey.startsWith(`${normalizedFromKey}/`)) {
+			return `${normalizedTo}${normalizedPath.slice(normalizedFrom.length)}`;
+		}
+		return normalizedPath;
+	}
+
 	function buildFolderTree(rows) {
 		const root = { children: new Map() };
 		rows.forEach(row => {
@@ -8843,12 +8948,59 @@
 		return roots;
 	}
 
+	function flattenFolderTree(nodes, depth = 0, output = []) {
+		nodes.forEach(node => {
+			output.push({ path: node.path, depth, name: node.name });
+			if (Array.isArray(node.children) && node.children.length > 0) {
+				flattenFolderTree(node.children, depth + 1, output);
+			}
+		});
+		return output;
+	}
+
+	function getFolderOptions() {
+		const tree = buildFolderTree(folderTreeState.rows || []);
+		const flattened = flattenFolderTree(tree);
+		if (!flattened.some(item => item.path.toLowerCase() === 'inbox')) {
+			flattened.unshift({ path: 'Inbox', depth: 0, name: 'Inbox' });
+		}
+		return flattened;
+	}
+
+	function renderFolderSelectOptions(selectElement, selectedPath = 'Inbox') {
+		if (!selectElement) return;
+		const options = getFolderOptions();
+		const normalizedSelectedPath = normalizeFolderPath(selectedPath);
+		selectElement.innerHTML = '';
+		options.forEach(item => {
+			const option = document.createElement('option');
+			option.value = item.path;
+			const indentPrefix = item.depth > 0 ? `${'  '.repeat(item.depth)}- ` : '';
+			option.textContent = `${indentPrefix}${item.path}`;
+			selectElement.appendChild(option);
+		});
+		const matchedOption = options.find(item => item.path.toLowerCase() === normalizedSelectedPath.toLowerCase());
+		selectElement.value = matchedOption ? matchedOption.path : 'Inbox';
+	}
+
+	function syncComposeFolderSelect(preferredPath = null) {
+		const fallbackPath = appState.filters.folder || noteFolderSelect.value || 'Inbox';
+		renderFolderSelectOptions(noteFolderSelect, preferredPath || fallbackPath);
+	}
+
+	function refreshAllEditFolderSelects() {
+		document.querySelectorAll('.edit-folder-select').forEach(select => {
+			renderFolderSelectOptions(select, select.value || select.dataset.folderPath || 'Inbox');
+		});
+	}
+
 	function renderFolderNode(node, activeFolderPath, depth) {
 		const li = document.createElement('li');
 		const hasChildren = Array.isArray(node.children) && node.children.length > 0;
 		const nodeKey = node.path.toLowerCase();
 		const isCollapsed = hasChildren && collapsedFolderPaths.has(nodeKey);
 		const isActive = activeFolderPath === nodeKey;
+		const isInbox = nodeKey === 'inbox';
 		const toggleHtml = hasChildren
 			? `<button class='folder-toggle' title='Toggle folder'>${isCollapsed ? '▸' : '▾'}</button>`
 			: `<span class='folder-toggle-placeholder'></span>`;
@@ -8862,6 +9014,18 @@
 				${toggleHtml}
 				<span class='folder-label'>${escapeHtml(node.name)}</span>
 				<span class='folder-count'>${node.totalCount}</span>
+				<span class='folder-item-actions'>
+					<button class='folder-action-btn' data-action='rename' title='Rename folder' ${isInbox ? 'disabled' : ''}>
+						<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='currentColor'>
+							<path d='M3 17.25V21h3.75l11.06-11.06-3.75-3.75L3 17.25zm17.71-10.04a.996.996 0 0 0 0-1.41L18.2 3.29a.996.996 0 1 0-1.41 1.41l2.5 2.5c.39.39 1.02.39 1.42.01z'/>
+						</svg>
+					</button>
+					<button class='folder-action-btn' data-action='delete' title='Delete folder' ${isInbox ? 'disabled' : ''}>
+						<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='currentColor'>
+							<path d='M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zm3.46-9.12 1.41-1.41L12 9.59l1.12-1.12 1.41 1.41L13.41 11l1.12 1.12-1.41 1.41L12 12.41l-1.12 1.12-1.41-1.41L10.59 11 9.46 9.88zM15.5 4l-1-1h-5l-1 1H5v2h14V4z'/>
+						</svg>
+					</button>
+				</span>
 			</div>
 		`;
 
@@ -8904,21 +9068,145 @@
 			if (!response.ok) throw new Error('Failed to fetch folders');
 			folderTreeState.rows = await response.json();
 			renderFolderTree();
+			syncComposeFolderSelect();
+			refreshAllEditFolderSelects();
 		} catch (error) {
 			console.error('Error loading folders:', error);
 			document.getElementById('folders-container').innerHTML = '<p>Error loading folders.</p>';
 		}
 	}
 
+	async function requestFolderMutation(method, payload) {
+		const response = await fetch('/api/folders', {
+			method,
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(payload)
+		});
+		let data = {};
+		try {
+			data = await response.json();
+		} catch (_error) {
+			data = {};
+		}
+		if (!response.ok) {
+			throw new Error(data.error || 'Folder operation failed');
+		}
+		return data;
+	}
+
+	async function promptCreateFolder(initialPath = '') {
+		const userInput = window.prompt('Input folder path (example: Work/ProjectA)', initialPath);
+		if (userInput === null) {
+			return;
+		}
+		if (!userInput.trim()) {
+			showToast('Folder path cannot be empty.', 'error');
+			return;
+		}
+		const normalizedPath = normalizeFolderPath(userInput);
+		try {
+			const result = await requestFolderMutation('POST', { path: normalizedPath });
+			await loadAndRenderFolders();
+			syncComposeFolderSelect(result.path || normalizedPath);
+			showToast('Folder saved.', 'success');
+		} catch (error) {
+			showToast(error.message, 'error');
+		}
+	}
+
+	async function promptRenameFolder(path) {
+		const fromPath = normalizeFolderPath(path);
+		const userInput = window.prompt('Rename folder to path:', fromPath);
+		if (userInput === null) {
+			return;
+		}
+		if (!userInput.trim()) {
+			showToast('Folder path cannot be empty.', 'error');
+			return;
+		}
+		const toPath = normalizeFolderPath(userInput);
+		if (fromPath.toLowerCase() === toPath.toLowerCase()) {
+			return;
+		}
+		try {
+			const result = await requestFolderMutation('PATCH', { fromPath, toPath });
+			if (appState.filters.folder && isFolderInSubtree(appState.filters.folder, fromPath)) {
+				appState.filters.folder = replaceFolderPrefix(appState.filters.folder, fromPath, toPath);
+			}
+			if (isFolderInSubtree(noteFolderSelect.value || 'Inbox', fromPath)) {
+				syncComposeFolderSelect(replaceFolderPrefix(noteFolderSelect.value || 'Inbox', fromPath, toPath));
+			}
+			await loadAndRenderFolders();
+			reloadNotes();
+			showToast(`Folder renamed to ${result.toPath || toPath}.`, 'success');
+		} catch (error) {
+			showToast(error.message, 'error');
+		}
+	}
+
+	async function promptDeleteFolder(path) {
+		const targetPath = normalizeFolderPath(path);
+		const confirmed = await showCustomConfirm(`Delete folder "${targetPath}" and move all notes in this subtree to Inbox?`);
+		if (!confirmed) {
+			return;
+		}
+		try {
+			await requestFolderMutation('DELETE', { path: targetPath });
+			if (appState.filters.folder && isFolderInSubtree(appState.filters.folder, targetPath)) {
+				appState.filters.folder = null;
+			}
+			if (isFolderInSubtree(noteFolderSelect.value || 'Inbox', targetPath)) {
+				syncComposeFolderSelect('Inbox');
+			}
+			await loadAndRenderFolders();
+			reloadNotes();
+			showToast('Folder deleted. Notes moved to Inbox.', 'success');
+		} catch (error) {
+			showToast(error.message, 'error');
+		}
+	}
+
 	const clearFolderBtn = document.getElementById('clear-folder-filter-btn');
+	const createFolderBtn = document.getElementById('create-folder-btn');
+	const manageFoldersBtn = document.getElementById('manage-folders-btn');
+	createFolderBtn.addEventListener('click', () => {
+		const seedPath = appState.filters.folder
+			? `${normalizeFolderPath(appState.filters.folder)}/`
+			: '';
+		promptCreateFolder(seedPath);
+	});
+	manageFoldersBtn.addEventListener('click', () => {
+		const currentPath = normalizeFolderPath(noteFolderSelect.value || 'Inbox');
+		const seedPath = currentPath === 'Inbox' ? '' : `${currentPath}/`;
+		promptCreateFolder(seedPath);
+	});
+
 	document.getElementById('folders-container').addEventListener('click', (event) => {
-		const toggle = event.target.closest('.folder-toggle');
 		const folderItem = event.target.closest('.folder-item');
 		if (!folderItem) {
 			return;
 		}
+		const actionButton = event.target.closest('.folder-action-btn');
+		const toggle = event.target.closest('.folder-toggle');
 		const folderPath = folderItem.dataset.folderPath;
 		const folderKey = folderItem.dataset.folderKey || normalizeFolderPath(folderPath).toLowerCase();
+
+		if (actionButton) {
+			event.preventDefault();
+			event.stopPropagation();
+			if (actionButton.disabled) {
+				return;
+			}
+			const action = actionButton.dataset.action;
+			if (action === 'rename') {
+				promptRenameFolder(folderPath);
+			}
+			if (action === 'delete') {
+				promptDeleteFolder(folderPath);
+			}
+			return;
+		}
+
 		if (toggle) {
 			event.preventDefault();
 			event.stopPropagation();
@@ -8932,7 +9220,8 @@
 		}
 
 		appState.filters.folder = folderPath;
-		noteFolderInput.value = folderPath === 'Inbox' ? '' : folderPath;
+		syncComposeFolderSelect(folderPath);
+		renderFolderTree();
 		reloadNotes();
 	});
 
@@ -8945,7 +9234,7 @@
 
 	clearFolderBtn.addEventListener('click', () => {
 		appState.filters.folder = null;
-		noteFolderInput.value = '';
+		syncComposeFolderSelect('Inbox');
 		clearFolderBtn.classList.remove('visible');
 		renderFolderTree();
 		reloadNotes();
