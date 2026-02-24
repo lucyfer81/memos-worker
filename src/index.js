@@ -1,6 +1,68 @@
 const NOTES_PER_PAGE = 10;
 const SESSION_DURATION_SECONDS = 30*86400; // Session 有效期: 30 天
 const SESSION_COOKIE = '__session';
+const DEFAULT_FOLDER_NAME = 'Inbox';
+let folderSchemaReady = false;
+let folderSchemaInitPromise = null;
+
+function normalizeFolderName(value) {
+	const raw = typeof value === 'string' ? value : (value ?? '').toString();
+	const normalized = raw
+		.trim()
+		.replace(/\\/g, '/')
+		.split('/')
+		.map(part => part.trim())
+		.filter(part => part.length > 0)
+		.join('/');
+	return normalized || DEFAULT_FOLDER_NAME;
+}
+
+function normalizeNoteFolder(note) {
+	if (!note || typeof note !== 'object') {
+		return note;
+	}
+	note.folder = normalizeFolderName(note.folder);
+	return note;
+}
+
+function isDuplicateColumnError(error, columnName) {
+	const message = (error && error.message) ? String(error.message).toLowerCase() : '';
+	return message.includes('duplicate column name') && message.includes(String(columnName).toLowerCase());
+}
+
+function appendFolderSubtreeFilter(whereClauses, bindings, folderName, tableAlias = 'n') {
+	if (!folderName || !folderName.trim()) {
+		return;
+	}
+	const normalizedFolder = normalizeFolderName(folderName);
+	const normalizedExpr = `LOWER(COALESCE(NULLIF(TRIM(${tableAlias}.folder), ''), ?))`;
+	whereClauses.push(`(${normalizedExpr} = LOWER(?) OR ${normalizedExpr} LIKE LOWER(?))`);
+	bindings.push(DEFAULT_FOLDER_NAME, normalizedFolder, DEFAULT_FOLDER_NAME, `${normalizedFolder}/%`);
+}
+
+async function ensureFolderSchema(db) {
+	if (folderSchemaReady) {
+		return;
+	}
+	if (!folderSchemaInitPromise) {
+		folderSchemaInitPromise = (async () => {
+			try {
+				await db.prepare("ALTER TABLE notes ADD COLUMN folder TEXT DEFAULT 'Inbox' NOT NULL").run();
+			} catch (e) {
+				if (!isDuplicateColumnError(e, 'folder')) {
+					throw e;
+				}
+			}
+			await db.prepare("CREATE INDEX IF NOT EXISTS idx_notes_folder ON notes(folder)").run();
+			folderSchemaReady = true;
+		})().catch((e) => {
+			folderSchemaInitPromise = null;
+			throw e;
+		});
+	}
+	await folderSchemaInitPromise;
+}
+
 export default {
 	async fetch(request, env, ctx) {
 		return await handleApiRequest(request, env);
@@ -153,6 +215,9 @@ async function handleApiRequest(request, env) {
 	}
 	if (pathname === '/api/tags') {
 		return handleTagsList(request, env);
+	}
+	if (pathname === '/api/folders') {
+		return handleFoldersList(request, env);
 	}
 	const fileMatch = pathname.match(/^\/api\/files\/([^\/]+)\/([^\/]+)$/);
 	if (fileMatch) {
@@ -317,6 +382,7 @@ async function handleTimelineRequest(request, env) {
 async function handleSearchRequest(request, env) {
 	const { searchParams } = new URL(request.url);
 	const query = searchParams.get('q');
+	await ensureFolderSchema(env.DB);
 
 	// 1. 如果搜索查询为空或只包含空格，则将请求委托给 handleNotesList
 	if (!query || query.trim().length === 0) {
@@ -333,6 +399,7 @@ async function handleSearchRequest(request, env) {
 	const offset = (page - 1) * NOTES_PER_PAGE;
 	const limit = NOTES_PER_PAGE;
 	const tagName = searchParams.get('tag');
+	const folderName = searchParams.get('folder');
 	const startTimestamp = searchParams.get('startTimestamp');
 	const endTimestamp = searchParams.get('endTimestamp');
 	const isFavoritesMode = searchParams.get('favorites') === 'true';
@@ -364,6 +431,7 @@ async function handleSearchRequest(request, env) {
 			whereClauses.push("t.name = ?");
 			bindings.push(tagName);
 		}
+		appendFolderSubtreeFilter(whereClauses, bindings, folderName, 'n');
 
 		const whereString = whereClauses.join(" AND ");
 		const stmt = db.prepare(`
@@ -385,6 +453,7 @@ async function handleSearchRequest(request, env) {
 			if (typeof note.files === 'string') {
 				try { note.files = JSON.parse(note.files); } catch (e) { note.files = []; }
 			}
+			normalizeNoteFolder(note);
 		});
 		return jsonResponse({ notes, hasMore });
 	} catch (e) {
@@ -413,6 +482,29 @@ async function handleTagsList(request, env) {
 		return jsonResponse(results);
 	} catch (e) {
 		console.error("Tags List Error:", e.message);
+		return jsonResponse({ error: 'Database Error' }, 500);
+	}
+}
+
+async function handleFoldersList(request, env) {
+	const db = env.DB;
+	try {
+		await ensureFolderSchema(db);
+		const stmt = db.prepare(`
+			WITH normalized AS (
+				SELECT COALESCE(NULLIF(TRIM(folder), ''), ?) AS folder_name
+				FROM notes
+				WHERE is_archived = 0
+			)
+			SELECT MIN(folder_name) AS name, COUNT(*) AS count
+			FROM normalized
+			GROUP BY LOWER(folder_name)
+			ORDER BY count DESC, name COLLATE NOCASE ASC
+		`);
+		const { results } = await stmt.bind(DEFAULT_FOLDER_NAME).all();
+		return jsonResponse(results || []);
+	} catch (e) {
+		console.error("Folders List Error:", e.message);
 		return jsonResponse({ error: 'Database Error' }, 500);
 	}
 }
@@ -479,7 +571,7 @@ async function handleGetSettings(request, env) {
 	const defaultSettings = {
 		showSearchBar: true,
 		showStatsCard: true,
-		showCalendar: true,
+		showFolders: true,
 		showTags: true,
 		showTimeline: true,
 		showRightSidebar: true,
@@ -504,13 +596,17 @@ async function handleGetSettings(request, env) {
 		enableContentTruncation: false,
 	};
 
-	let savedSettings = await env.NOTES_KV.get('user_settings', 'json');
-
-	// 如果 KV 中没有设置，则返回默认值
+	const savedSettings = await env.NOTES_KV.get('user_settings', 'json');
 	if (!savedSettings) {
 		return jsonResponse(defaultSettings);
 	}
-	return jsonResponse(savedSettings);
+
+	const normalizedSettings = { ...savedSettings };
+	if (normalizedSettings.showFolders === undefined && normalizedSettings.showCalendar !== undefined) {
+		normalizedSettings.showFolders = normalizedSettings.showCalendar;
+	}
+	delete normalizedSettings.showCalendar;
+	return jsonResponse({ ...defaultSettings, ...normalizedSettings });
 }
 
 /**
@@ -534,6 +630,7 @@ async function handleNotesList(request, env) {
 	const db = env.DB;
 
 	try {
+		await ensureFolderSchema(db);
 		switch (request.method) {
 			case 'GET': {
 				const url = new URL(request.url);
@@ -544,6 +641,7 @@ async function handleNotesList(request, env) {
 				const startTimestamp = url.searchParams.get('startTimestamp');
 				const endTimestamp = url.searchParams.get('endTimestamp');
 				const tagName = url.searchParams.get('tag');
+				const folderName = url.searchParams.get('folder');
 				const isFavoritesMode = url.searchParams.get('favorites') === 'true';
 				const isArchivedMode = url.searchParams.get('archived') === 'true';
 
@@ -579,6 +677,7 @@ async function handleNotesList(request, env) {
 				if (isFavoritesMode) {
 					whereClauses.push("n.is_favorited = 1");
 				}
+				appendFolderSubtreeFilter(whereClauses, bindings, folderName, 'n');
 				const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
 
 				const query = `
@@ -602,6 +701,7 @@ async function handleNotesList(request, env) {
 					if (typeof note.files === 'string') {
 						try { note.files = JSON.parse(note.files); } catch (e) { note.files = []; }
 					}
+					normalizeNoteFolder(note);
 				});
 
 				return jsonResponse({ notes, hasMore });
@@ -610,6 +710,7 @@ async function handleNotesList(request, env) {
 			case 'POST': {
 				const formData = await request.formData();
 				const content = formData.get('content')?.toString() || '';
+				const folderName = normalizeFolderName(formData.get('folder'));
 				const files = formData.getAll('file');
 
 				if (!content.trim() && files.every(f => !f.name)) {
@@ -624,11 +725,11 @@ async function handleNotesList(request, env) {
 
 				// 【核心修改】在 INSERT 语句中加入新的 pics 字段和 link_status 字段
 				const insertStmt = db.prepare(
-					"INSERT INTO notes (content, files, is_pinned, created_at, updated_at, pics, link_status) VALUES (?, ?, 0, ?, ?, ?, ?) RETURNING id"
+					"INSERT INTO notes (content, files, is_pinned, created_at, updated_at, pics, link_status, folder) VALUES (?, ?, 0, ?, ?, ?, ?, ?) RETURNING id"
 				);
 				// 先用一个空的 files 数组插入
 				// 【核心修改】将提取出的 picUrls 绑定到 SQL 语句中，并设置 link_status 为 'pending'
-				const { id: noteId } = await insertStmt.bind(content, "[]", now, now, picUrls, 'pending').first();
+				const { id: noteId } = await insertStmt.bind(content, "[]", now, now, picUrls, 'pending', folderName).first();
 				if (!noteId) {
 					throw new Error("Failed to create note and get ID.");
 				}
@@ -655,6 +756,7 @@ async function handleNotesList(request, env) {
 				if (typeof newNote.files === 'string') {
 					newNote.files = JSON.parse(newNote.files);
 				}
+				normalizeNoteFolder(newNote);
 
 				return jsonResponse(newNote, 201);
 			}
@@ -670,6 +772,7 @@ async function handleNotesList(request, env) {
  */
 async function handleNoteDetail(request, noteId, env) {
 	const db = env.DB;
+	await ensureFolderSchema(db);
 	const id = parseInt(noteId);
 	if (isNaN(id)) {
 		return new Response('Invalid Note ID', { status: 400 });
@@ -689,6 +792,7 @@ async function handleNoteDetail(request, noteId, env) {
 		} catch(e) {
 			existingNote.files = [];
 		}
+		normalizeNoteFolder(existingNote);
 
 		switch (request.method) {
 			case 'GET': {
@@ -703,6 +807,7 @@ async function handleNoteDetail(request, noteId, env) {
 				if (formData.has('content')) {
 					console.log('[DEBUG] has content field');
 					const content = formData.get('content')?.toString() ?? existingNote.content;
+					const folderName = normalizeFolderName(formData.has('folder') ? formData.get('folder') : existingNote.folder);
 					console.log('[DEBUG] content length:', content.length);
 					let currentFiles = existingNote.files;
 
@@ -745,13 +850,18 @@ async function handleNoteDetail(request, noteId, env) {
 					const newTimestamp = shouldUpdateTimestamp ? Date.now() : existingNote.updated_at;
 					// 在 UPDATE 语句中加入 pics 字段的更新
 					const stmt = db.prepare(
-						"UPDATE notes SET content = ?, files = ?, updated_at = ?, pics = ? WHERE id = ?"
+						"UPDATE notes SET content = ?, files = ?, updated_at = ?, pics = ?, folder = ? WHERE id = ?"
 					);
 					console.log('[DEBUG] updating note in database...');
-					await stmt.bind(content, JSON.stringify(currentFiles), newTimestamp, picUrls, id).run();
+					await stmt.bind(content, JSON.stringify(currentFiles), newTimestamp, picUrls, folderName, id).run();
 					console.log('[DEBUG] note updated, now processing tags...');
 					await processNoteTags(db, id, content);
 					console.log('[DEBUG] tags processed');
+				}
+				if (formData.has('folder') && !formData.has('content')) {
+					const folderName = normalizeFolderName(formData.get('folder'));
+					const stmt = db.prepare("UPDATE notes SET folder = ? WHERE id = ?");
+					await stmt.bind(folderName, id).run();
 				}
 
 				if (formData.has('isPinned')) { // --- 这是置顶状态的更新 ---
@@ -775,6 +885,7 @@ async function handleNoteDetail(request, noteId, env) {
 				if (typeof updatedNote.files === 'string') {
 					updatedNote.files = JSON.parse(updatedNote.files);
 				}
+				normalizeNoteFolder(updatedNote);
 				console.log('[DEBUG handleNoteDetail PUT] END returning note');
 				return jsonResponse(updatedNote);
 			}

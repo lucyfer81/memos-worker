@@ -13,9 +13,12 @@ CREATE TABLE notes (
   is_favorited INTEGER DEFAULT 0 NOT NULL,
   is_archived INTEGER DEFAULT 0 NOT NULL,
   link_status TEXT DEFAULT 'pending',
+  folder TEXT DEFAULT 'Inbox' NOT NULL,
   pics TEXT,
   videos TEXT DEFAULT '[]'
 );
+
+CREATE INDEX idx_notes_folder ON notes(folder);
 
 CREATE TABLE note_tags (
   note_id INTEGER NOT NULL,

@@ -184,14 +184,14 @@
 	scrollbar-gutter: stable;
   }
 
-  #clear-filter-btn, #clear-tags-filter-btn {
+  #clear-filter-btn, #clear-tags-filter-btn, #clear-folder-filter-btn {
 	opacity: 0;
 	visibility: hidden;
 	transform: scale(0.8);
 	transition: opacity 0.2s ease, visibility 0.2s ease, transform 0.2s ease;
   }
 
-  #clear-filter-btn.visible, #clear-tags-filter-btn.visible {
+  #clear-filter-btn.visible, #clear-tags-filter-btn.visible, #clear-folder-filter-btn.visible {
 	opacity: 1;
 	visibility: visible;
 	transform: scale(1);
@@ -527,6 +527,29 @@
 	flex-wrap: wrap;
   }
 
+  .folder-input-row {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	margin-bottom: 0.75rem;
+  }
+
+  .folder-input-row label {
+	font-size: 0.85rem;
+	color: var(--text-secondary);
+	min-width: 52px;
+  }
+
+  .folder-input-row input {
+	flex: 1;
+	margin-bottom: 0;
+	padding: 8px 10px;
+	font-size: 0.9rem;
+	border: 1px solid var(--border-color);
+	background: var(--bg-color);
+	color: var(--text-color);
+  }
+
   .file-list-display .file-tag {
 	display: inline-flex;
 	align-items: center;
@@ -716,6 +739,22 @@
 
   .note-meta {
 	font-size: 0.8rem;
+	color: var(--text-secondary);
+	display: flex;
+	align-items: center;
+	gap: 0.4rem;
+	flex-wrap: wrap;
+  }
+
+  .note-folder-badge {
+	display: inline-flex;
+	align-items: center;
+	padding: 1px 8px;
+	border-radius: 999px;
+	font-size: 0.75rem;
+	line-height: 1.4;
+	background: var(--bg-color);
+	border: 1px solid var(--border-color);
 	color: var(--text-secondary);
   }
 
@@ -2344,21 +2383,6 @@
   body[data-theme='dark'] .heatmap-day[data-level="4"] {
 	background-color: rgba(var(--primary-color-rgb), 1);
   }
-  #heatmap-tooltip {
-	position: absolute;
-	display: none;
-	padding: 5px 10px;
-	background-color: var(--text-color);
-	color: var(--surface-color);
-	border-radius: 4px;
-	font-size: 0.8rem;
-	font-weight: 500;
-	white-space: nowrap;
-	z-index: 1001;
-	pointer-events: none;
-	transform: translate(-50%, -120%);
-  }
-
   #note-form.split-mode #main-editor-container {
 	display: flex;
 	gap: 1rem;
@@ -2416,177 +2440,103 @@
 	opacity: 1 !important;
   }
 
-  /* --- 日历组件样式 --- */
-  #calendar-wrapper {
-	padding: 0.5rem;
+  #folders-section-wrapper .sidebar-collapsible-content {
+	padding-left: 0.5rem;
   }
 
-  .calendar-header {
-	display: flex;
-	justify-content: space-between;
+  #folders-container ul {
+	list-style: none;
+	padding-left: 0;
+	margin: 0;
+  }
+
+  #folders-container li {
+	margin: 0.25rem 0;
+  }
+
+  .folder-item {
+	display: grid;
+	grid-template-columns: 16px 1fr auto;
 	align-items: center;
-  }
-
-  #calendar-month-year {
-	font-weight: 600;
-	font-size: 0.9rem;
-	color: var(--primary-color);
-  }
-
-  .calendar-nav-btn {
-	background: none;
-	border: none;
+	gap: 0.4rem;
+	padding: 6px 8px;
+	border-radius: 4px;
+	transition: background-color 0.2s ease;
 	cursor: pointer;
-	padding: 0.4rem;
-	border-radius: 50%;
-	display: flex;
+  }
+
+  .folder-item:hover {
+	background-color: var(--border-color);
+  }
+
+  .folder-item.active {
+	background-color: var(--primary-color);
+	color: white;
+  }
+
+  .folder-toggle {
+	width: 16px;
+	height: 16px;
+	display: inline-flex;
 	align-items: center;
 	justify-content: center;
+	border: none;
+	background: transparent;
+	color: inherit;
+	padding: 0;
+	cursor: pointer;
+	opacity: 0.7;
+  }
+
+  .folder-toggle:hover {
+	opacity: 1;
+  }
+
+  .folder-toggle-placeholder {
+	width: 16px;
+	height: 16px;
+	display: inline-block;
+  }
+
+  .folder-item.is-leaf {
+	grid-template-columns: 16px 1fr auto;
+  }
+
+  .folder-label {
+	word-break: break-all;
+	padding-right: 0.75rem;
+  }
+
+  .folder-count {
+	font-size: 0.8rem;
 	color: var(--text-secondary);
-	transition: background-color 0.2s, color 0.2s;
+	background-color: var(--bg-color);
+	padding: 1px 6px;
+	border-radius: 10px;
+	white-space: nowrap;
   }
 
-  .calendar-nav-btn:hover {
-	background-color: var(--border-color);
-	color: var(--text-color);
-  }
-
-  .calendar-nav-btn:disabled {
-	opacity: 0.3;
-	cursor: not-allowed;
-	background-color: transparent !important;
-  }
-
-  body[data-theme='dark'] .calendar-nav-btn:hover {
+  body[data-theme='dark'] .folder-count {
 	background-color: #4a5568;
   }
 
-  .calendar-grid {
-	display: grid;
-	grid-template-columns: repeat(7, 1fr);
-	gap: .25rem;
-  }
-	.calendar-date {
-		font-size: 0.875rem;
-	}
-  .calendar-day-name,
-  .calendar-date-wrapper {
-	text-align: center;
-	width: 1.5rem;
-	font-size: 0.875rem;
-	aspect-ratio: 1 / 1;
-	position: relative;
+  .folder-item.active .folder-count {
+	background-color: rgba(255, 255, 255, 0.2);
+	color: white;
   }
 
-  .calendar-day-name {
-	font-weight: 500;
+  .folder-item-placeholder {
+	font-size: 0.8rem;
 	color: var(--text-secondary);
-	display: flex;
-	align-items: center;
-	justify-content: center;
+	padding: 6px 12px;
   }
 
-  .calendar-date-wrapper {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	justify-content: center;
-  }
-
-  .calendar-date {
-	background-color: transparent;
-	border: none;
-	padding: 0;
-	width: 100%;
-	height: 100%;
-	border-radius: 50%;
-	cursor: pointer;
-	transition: all 0.2s ease;
-	color: var(--text-color);
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	position: relative;
-	z-index: 1;
-  }
-
-  .calendar-date.is-other-month {
-	color: var(--text-secondary);
-	opacity: 0.5;
-	cursor: default;
-	pointer-events: none;
-  }
-
-  .calendar-date:not(.is-other-month):hover {
-	background-color: var(--primary-hover);
-	color: white !important;
-	transform: scale(1.1);
-  }
-
-  .calendar-date.is-selected {
-	background-color: var(--primary-color) !important;
-	color: white !important;
-	box-shadow: 0 0 0 2px var(--surface-color), 0 0 0 4px var(--primary-color);
-  }
-
-  .calendar-date.is-selected:hover {
-	transform: none;
-  }
-  .calendar-date[data-level="1"] {
-	color: rgba(var(--primary-color-rgb), 0.6);
-  }
-
-  .calendar-date[data-level="2"] {
-	color: rgba(var(--primary-color-rgb), 0.8);
-  }
-
-  .calendar-date[data-level="3"] {
-	color: rgba(var(--primary-color-rgb), 1);
-	font-weight: 600;
-  }
-
-  .calendar-date[data-level="4"] {
-	color: rgba(var(--primary-color-rgb), 1);
-	font-weight: 600;
-  }
-
-  .calendar-dots-container {
-	position: absolute;
-	bottom: 2px;
-	left: 0;
-	right: 0;
-	display: flex;
-	justify-content: center;
-	align-items: center;
-	gap: 2px;
-	pointer-events: none;
-  }
-
-  .calendar-dot {
-	width: 3px;
-	height: 3px;
-	border-radius: 50%;
-	background-color: var(--primary-color);
-	opacity: 0.4;
-	transition: opacity 0.2s ease;
-  }
-
-  .calendar-dot:nth-child(odd) {
-	opacity: 0.9;
-  }
-  #calendar-tooltip {
-	position: absolute;
-	display: none;
-	padding: 4px 8px;
-	background-color: var(--text-color);
-	color: var(--surface-color);
-	border-radius: 4px;
-	font-size: 0.75rem;
-	font-weight: 500;
-	white-space: nowrap;
-	z-index: 1001;
-	pointer-events: none;
-	transform: translate(-50%, -120%);
+  .folder-children {
+	list-style: none;
+	margin: 0;
+	padding-left: 1rem;
+	border-left: 1px solid var(--border-color);
+	margin-left: 0.45rem;
   }
 
   #app-layout-container.attachments-mode {
@@ -2941,6 +2891,16 @@
   .timestamp-toggle-label input {
 	margin: 0;
   }
+
+  .edit-folder-input {
+	min-width: 110px;
+	max-width: 180px;
+	padding: 4px 8px;
+	font-size: 0.8rem;
+	border: 1px solid var(--border-color);
+	background: var(--bg-color);
+	color: var(--text-color);
+  }
   #toast-notification {
 	position: fixed;
 	top: 20px;
@@ -3289,29 +3249,25 @@
 			</button>
 		</div>
 
-		<!-- --- 统计卡片 --- -->
-		<div id='stats-card' class='sidebar-content'>
-			<div class='stat-item'>
-				<span id='stats-days' class='stat-value'>--</span>
-				<span class='stat-label'>Days</span>
-			</div>
-			<div class='stat-item'>
-				<span id='stats-memos' class='stat-value'>--</span>
-				<span class='stat-label'>Memos</span>
-			</div>
-			<div class='stat-item'>
-				<span id='stats-tags' class='stat-value'>--</span>
-				<span class='stat-label'>Tags</span>
+			<div class='sidebar-content' id='folders-section-wrapper'>
+			<h4>
+				<span>Folders</span>
+				<div class='sidebar-header-actions'>
+					<button id='clear-folder-filter-btn' class='icon-btn' title='Clear folder filter'></button>
+					<button class='sidebar-toggle-btn' data-target='folders-container'>
+						<svg class='toggle-icon' xmlns='http://www.w3.org/2000/svg' height='24px' viewBox='0 0 24 24' width='24px'
+								 fill='currentColor'>
+							<path d='M0 0h24v24H0V0z' fill='none' />
+							<path d='M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6 1.41 1.41z' />
+						</svg>
+					</button>
+				</div>
+			</h4>
+			<div id='folders-container' class='sidebar-collapsible-content'>
+				<div class='spinner'></div>
 			</div>
 		</div>
-
-		<div id='calendar-wrapper' class='sidebar-content'>
-		</div>
-		<div id='heatmap-container-wrapper' class='sidebar-content'>
-			<div class='spinner'></div>
-		</div>
-
-		<div class='sidebar-content' id='tags-section-wrapper'>
+			<div class='sidebar-content' id='tags-section-wrapper'>
 			<h4>
 				<span>Tags</span>
 				<div class='sidebar-header-actions'>
@@ -3330,25 +3286,7 @@
 			</div>
 		</div>
 
-		<div class='sidebar-content' id='timeline-section-wrapper'>
-			<h4>
-				<span>Timeline</span>
-				<div class='sidebar-header-actions'>
-					<button id='clear-filter-btn' class='icon-btn' title='Show All Notes'></button>
-					<button class='sidebar-toggle-btn' data-target='timeline-container'>
-						<svg class='toggle-icon' xmlns='http://www.w3.org/2000/svg' height='24px' viewBox='0 0 24 24' width='24px'
-								 fill='currentColor'>
-							<path d='M0 0h24v24H0V0z' fill='none' />
-							<path d='M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6 1.41 1.41z' />
-						</svg>
-					</button>
-				</div>
-			</h4>
-			<div id='timeline-container' class='sidebar-collapsible-content'>
-				<div class='spinner'></div>
-			</div>
-		</div>
-	</aside>
+		</aside>
 
 	<!-- 中间主内容区 -->
 	<main id='main-content-area'>
@@ -3399,6 +3337,10 @@
 					<div id='main-editor-container'>
 						<textarea id='note-input' placeholder='Write in Markdown...' rows='3'></textarea>
 						<div id='main-edit-preview' class='edit-preview note-content'></div>
+					</div>
+					<div class='folder-input-row'>
+						<label for='note-folder-input'>Folder</label>
+						<input type='text' id='note-folder-input' placeholder='Inbox'>
 					</div>
 
 					<div class='form-actions'>
@@ -3720,34 +3662,22 @@
 		<div class='settings-content'>
 			<div class='setting-group'>
 				<h4>Interface Visibility</h4>
-				<div class='setting-item'>
-					<label for='toggle-search-bar'>Show Search</label>
-					<input type='checkbox' id='toggle-search-bar' class='toggle-switch'>
-				</div>
-				<div class='setting-item'>
-					<label for='toggle-stats-card'>Show Stats</label>
-					<input type='checkbox' id='toggle-stats-card' class='toggle-switch'>
-				</div>
-				<div class='setting-item'>
-					<label for='toggle-calendar'>Show Calendar</label>
-					<input type='checkbox' id='toggle-calendar' class='toggle-switch'>
-				</div>
-				<div class='setting-item'>
-					<label for='toggle-heatmap'>Show Heatmap</label>
-					<input type='checkbox' id='toggle-heatmap' class='toggle-switch'>
-				</div>
-				<div class='setting-item'>
-					<label for='toggle-tags'>Show Tags</label>
-					<input type='checkbox' id='toggle-tags' class='toggle-switch'>
-				</div>
-				<div class='setting-item'>
-					<label for='toggle-timeline'>Show Timeline</label>
-					<input type='checkbox' id='toggle-timeline' class='toggle-switch'>
-				</div>
-				<div class='setting-item'>
-					<label for='toggle-right-sidebar'>Show Right Sidebar</label>
-					<input type='checkbox' id='toggle-right-sidebar' class='toggle-switch'>
-				</div>
+					<div class='setting-item'>
+						<label for='toggle-search-bar'>Show Search</label>
+						<input type='checkbox' id='toggle-search-bar' class='toggle-switch'>
+					</div>
+					<div class='setting-item'>
+						<label for='toggle-folders'>Show Folders</label>
+						<input type='checkbox' id='toggle-folders' class='toggle-switch'>
+					</div>
+					<div class='setting-item'>
+						<label for='toggle-tags'>Show Tags</label>
+						<input type='checkbox' id='toggle-tags' class='toggle-switch'>
+					</div>
+					<div class='setting-item'>
+						<label for='toggle-right-sidebar'>Show Right Sidebar</label>
+						<input type='checkbox' id='toggle-right-sidebar' class='toggle-switch'>
+					</div>
 				<div class='setting-item'>
 					<label for='toggle-date-grouping'>Enable Date Grouping</label>
 					<input type='checkbox' id='toggle-date-grouping' class='toggle-switch'>
@@ -3896,8 +3826,6 @@
 	</button>
 </div>-->
 
-<div id='heatmap-tooltip'></div>
-<div id='calendar-tooltip'></div>
 <div id="toast-notification"></div>
 
 <!-- Share Link Modal -->
@@ -4022,11 +3950,6 @@
 		tables: true
 	});
 
-	const calendarWrapper = document.getElementById('calendar-wrapper');
-	const calendarTooltip = document.getElementById('calendar-tooltip'); // 【新增】
-	let notesDataByDate = new Map();
-	let calendarInstance = null;
-
 	// 链接系统状态变量
 	let linkSuggestions = [];
 	let selectedLinks = new Map();
@@ -4036,160 +3959,6 @@
 	let pendingNoteContent = null;
 	let isAutoInboxFlushing = false;
 	const PENDING_LINK_DECISION_STORAGE_KEY = 'pending-link-decision-note-id';
-
-	class Calendar {
-		constructor(container, dataProvider) {
-			this.container = container;
-			this.dataProvider = dataProvider;
-			this.currentDate = new Date();
-			this.today = new Date();
-			this.today.setHours(0, 0, 0, 0);
-			this.selectedDate = null;
-			this.render();
-		}
-
-		render() {
-			this.container.innerHTML = '';
-			const month = this.currentDate.getMonth();
-			const year = this.currentDate.getFullYear();
-			const header = document.createElement('div');
-			header.className = 'calendar-header';
-			header.innerHTML = `
-                <button id='calendar-prev' class='calendar-nav-btn' title='Previous month'>◄</button>
-                <span id='calendar-month-year'>${this.currentDate.toLocaleString('en-US', {
-				month: 'long',
-				year: 'numeric'
-			})}</span>
-                <button id='calendar-next' class='calendar-nav-btn' title='Next month'>►</button>
-            `;
-			this.container.appendChild(header);
-			const nextMonthBtn = document.getElementById('calendar-next');
-			const firstDayOfNextMonth = new Date(year, month + 1, 1);
-			if (firstDayOfNextMonth > this.today) {
-				nextMonthBtn.disabled = true;
-			}
-
-			const grid = document.createElement('div');
-			grid.className = 'calendar-grid';
-			const dayNames = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
-			dayNames.forEach(name => {
-				const dayNameEl = document.createElement('div');
-				dayNameEl.className = 'calendar-day-name';
-				dayNameEl.textContent = name;
-				grid.appendChild(dayNameEl);
-			});
-
-			const firstDayOfMonth = new Date(year, month, 1);
-			const lastDayOfMonth = new Date(year, month + 1, 0);
-			const firstDayOfWeek = firstDayOfMonth.getDay();
-			for (let i = 0; i < firstDayOfWeek; i++) {
-				grid.appendChild(document.createElement('div'));
-			}
-			for (let day = 1; day <= lastDayOfMonth.getDate(); day++) {
-				const dateWrapper = document.createElement('div');
-				dateWrapper.className = 'calendar-date-wrapper';
-				const dateButton = document.createElement('button');
-				dateButton.className = 'calendar-date';
-				dateButton.textContent = day;
-				const thisDate = new Date(year, month, day);
-				const dateString = this.formatDateString(thisDate);
-				dateButton.dataset.date = dateString;
-
-				const count = this.dataProvider.get(dateString) || 0;
-				if (count > 0) {
-					let level = 0;
-					if (count >= 1 && count <= 2) level = 1;
-					else if (count >= 3 && count <= 5) level = 2;
-					else if (count > 5) level = 3;
-					if (level > 0) dateButton.dataset.level = level;
-
-					const dotsContainer = document.createElement('div');
-					dotsContainer.className = 'calendar-dots-container';
-					const dotCount = Math.min(level, 3);
-					for (let i = 0; i < dotCount; i++) {
-						const dot = document.createElement('div');
-						dot.className = 'calendar-dot';
-						dotsContainer.appendChild(dot);
-					}
-					dateWrapper.appendChild(dotsContainer);
-				}
-
-				if (this.selectedDate && this.formatDateString(this.selectedDate) === dateString) {
-					dateButton.classList.add('is-selected');
-				}
-				dateWrapper.insertBefore(dateButton, dateWrapper.firstChild);
-				grid.appendChild(dateWrapper);
-			}
-			this.container.appendChild(grid);
-			this.addEventListeners();
-		}
-
-		addEventListeners() {
-			document.getElementById('calendar-prev').addEventListener('click', () => this.changeMonth(-1));
-			const nextBtn = document.getElementById('calendar-next');
-			if (nextBtn && !nextBtn.disabled) {
-				nextBtn.addEventListener('click', () => this.changeMonth(1));
-			}
-
-			this.container.querySelectorAll('.calendar-date').forEach(button => {
-				button.addEventListener('click', (e) => this.selectDate(e.target));
-				button.addEventListener('mouseover', (e) => {
-					const target = e.currentTarget;
-					const dateStr = target.dataset.date;
-					const count = this.dataProvider.get(dateStr) || 0;
-					if (count > 0) {
-						const countText = count === 1 ? '1 note' : `${count} notes`;
-						calendarTooltip.textContent = `${countText} on ${dateStr}`;
-						calendarTooltip.style.display = 'block';
-					}
-				});
-
-				button.addEventListener('mousemove', (e) => {
-					if (calendarTooltip.style.display === 'block') {
-						calendarTooltip.style.left = `${e.pageX}px`;
-						calendarTooltip.style.top = `${e.pageY}px`;
-					}
-				});
-
-				button.addEventListener('mouseout', () => {
-					calendarTooltip.style.display = 'none';
-				});
-			});
-		}
-
-		changeMonth(direction) {
-			this.currentDate.setMonth(this.currentDate.getMonth() + direction);
-			this.render();
-		}
-
-		selectDate(dateElement) {
-			const dateString = dateElement.dataset.date;
-			if (this.selectedDate && this.formatDateString(this.selectedDate) === dateString) {
-				this.selectedDate = null;
-				appState.filters.date = null;
-				clearFilterBtn.classList.remove('visible');
-			} else {
-				const [year, month, day] = dateString.split('-').map(Number);
-				this.selectedDate = new Date(year, month - 1, day);
-				const startOfDay = new Date(year, month - 1, day);
-				const endOfDay = new Date(year, month - 1, day + 1);
-				appState.filters.date = {
-					startTimestamp: startOfDay.getTime(),
-					endTimestamp: endOfDay.getTime()
-				};
-				clearFilterBtn.classList.add('visible');
-			}
-			this.render();
-			reloadNotes();
-		}
-
-		formatDateString(date) {
-			const year = date.getFullYear();
-			const month = (date.getMonth() + 1).toString().padStart(2, '0');
-			const day = date.getDate().toString().padStart(2, '0');
-			return `${year}-${month}-${day}`;
-		}
-	}
 
 	async function handleStandaloneImageUpload(request, env) {
 		try {
@@ -4354,28 +4123,33 @@
 			}
 		}
 	});
-	// --- 全局设置管理 ---
-	const defaultSettings = {
-		showSearchBar: true, showStatsCard: true, showCalendar: true, showTags: true,
-		showTimeline: true, showRightSidebar: true, hideEditorInWaterfall: false,
-		showHeatmap: true, imageUploadDestination: 'local', imgurClientId: '',
-		surfaceColor: '#ffffff', surfaceColorDark: '#151f31', surfaceOpacity: 1,
-		backgroundOpacity: 1, backgroundImage: '/bg.jpg', backgroundBlur: 0,
-		waterfallCardWidth: 320, enableDateGrouping: false, telegramProxy: false,
-		showFavorites: true,  // 控制收藏夹
-		showArchive: true,      // 控制归档
-		enablePinning: true,    // 控制置顶功能
-		enableSharing: true,    // 控制分享功能
-		showDocs: true,          // 控制 Docs 链接
-		enableContentTruncation: true,
-	}
+		// --- 全局设置管理 ---
+		const defaultSettings = {
+			showSearchBar: true, showFolders: true, showTags: true,
+			showRightSidebar: true, hideEditorInWaterfall: false,
+			imageUploadDestination: 'local', imgurClientId: '',
+			surfaceColor: '#ffffff', surfaceColorDark: '#151f31', surfaceOpacity: 1,
+			backgroundOpacity: 1, backgroundImage: '/bg.jpg', backgroundBlur: 0,
+			waterfallCardWidth: 320, enableDateGrouping: false, telegramProxy: false,
+			showFavorites: true,  // 控制收藏夹
+			showArchive: true,      // 控制归档
+			enablePinning: true,    // 控制置顶功能
+			enableSharing: true,    // 控制分享功能
+			showDocs: true,          // 控制 Docs 链接
+			enableContentTruncation: true,
+		}
 	let settings = defaultSettings;
 
 	async function loadSettings() {
 		try {
 			const response = await fetch('/api/settings');
 			if (!response.ok) throw new Error('Failed to fetch settings from server');
-			settings = await response.json();
+			const savedSettings = await response.json();
+			settings = { ...defaultSettings, ...savedSettings };
+			if (settings.showFolders === undefined && settings.showCalendar !== undefined) {
+				settings.showFolders = settings.showCalendar;
+			}
+			delete settings.showCalendar;
 		} catch (error) {
 			console.error("Could not load settings:", error);
 			// showCustomAlert(`Error loading settings: ${error.message}. Using local defaults.`, 'error');
@@ -4404,6 +4178,7 @@
 		filters: {
 			query: '',
 			tag: null,
+			folder: null,
 			date: null
 		},
 		pagination: {
@@ -4412,6 +4187,7 @@
 			hasMore: true
 		}
 	};
+	const collapsedFolderPaths = new Set();
 
 	// --- DOM Elements ---
 	const authContainer = document.getElementById('auth-container');
@@ -4420,6 +4196,7 @@
 	const logoutBtn = document.getElementById('logout-btn');
 	const noteForm = document.getElementById('note-form');
 	const noteInput = document.getElementById('note-input');
+	const noteFolderInput = document.getElementById('note-folder-input');
 	const noteFile = document.getElementById('note-file');
 	const fileListDisplay = document.getElementById('file-list-display');
 	const notesContainer = document.getElementById('notes-container');
@@ -4466,13 +4243,10 @@
 	const themeColorBtn = document.getElementById('theme-color-btn');
 	const themeColorPopover = document.getElementById('theme-color-popover');
 	const colorPalette = themeColorPopover.querySelector('.color-palette');
-	const colorPickerLabel = document.getElementById('color-picker-label');
-	const colorPickerPreview = document.getElementById('color-picker-preview');
-	const colorPickerInput = document.getElementById('color-picker-input');
-	const hexColorInput = document.getElementById('hex-color-input');
-	const statsDays = document.getElementById('stats-days');
-	const statsMemos = document.getElementById('stats-memos');
-	const statsTags = document.getElementById('stats-tags');
+		const colorPickerLabel = document.getElementById('color-picker-label');
+		const colorPickerPreview = document.getElementById('color-picker-preview');
+		const colorPickerInput = document.getElementById('color-picker-input');
+		const hexColorInput = document.getElementById('hex-color-input');
 	const insertImageBtn = document.getElementById('insert-image-btn');
 	const insertCodeBtn = document.getElementById('insert-code-btn');
 	const rightSidebar = document.getElementById('right-sidebar');
@@ -4484,24 +4258,21 @@
 	const toggleDateGrouping = document.getElementById('toggle-date-grouping');
 
 	const toggleRightSidebar = document.getElementById('toggle-right-sidebar');
-	const toggleCalendar = document.getElementById('toggle-calendar');
+	const toggleFolders = document.getElementById('toggle-folders');
 	const toggleEditorInWaterfall = document.getElementById('toggle-editor-in-waterfall');
 
 	// 设置弹框相关元素
 	const settingsModalOverlay = document.getElementById('settings-modal-overlay');
 	const closeSettingsBtn = document.getElementById('close-settings-btn');
-	// 可见性开关
-	const toggleSearchBar = document.getElementById('toggle-search-bar');
-	const toggleStatsCard = document.getElementById('toggle-stats-card');
-	const toggleTags = document.getElementById('toggle-tags');
-	const toggleTimeline = document.getElementById('toggle-timeline');
+		// 可见性开关
+		const toggleSearchBar = document.getElementById('toggle-search-bar');
+		const toggleTags = document.getElementById('toggle-tags');
 	// 背景设置
 	const bgImageUrl = document.getElementById('bg-image-url');
-	const bgImageUpload = document.getElementById('bg-image-upload');
-	const bgBlurSlider = document.getElementById('bg-blur-slider');
-	const clearBgBtn = document.getElementById('clear-bg-btn');
-	const restoreBgBtn = document.getElementById('restore-bg-btn');
-	const toggleHeatmap = document.getElementById('toggle-heatmap');
+		const bgImageUpload = document.getElementById('bg-image-upload');
+		const bgBlurSlider = document.getElementById('bg-blur-slider');
+		const clearBgBtn = document.getElementById('clear-bg-btn');
+		const restoreBgBtn = document.getElementById('restore-bg-btn');
 	const bgOpacitySlider = document.getElementById('bg-opacity-slider');
 	const surfaceColorPickerInput = document.getElementById('surface-color-picker-input');
 	const surfaceHexColorInput = document.getElementById('surface-hex-color-input');
@@ -4512,11 +4283,22 @@
 	const waterfallWidthValue = document.getElementById('waterfall-width-value');
 	const toggleTelegramProxy = document.getElementById('toggle-telegram-proxy');
 
-	// 需要被控制显隐的左侧栏卡片
-	const searchStatsContainer = document.querySelector('.sidebar-search-container');
-	const statsCard = document.getElementById('stats-card');
-	const tagsSectionWrapper = document.getElementById('tags-section-wrapper');
-	const timelineSectionWrapper = document.getElementById('timeline-section-wrapper');
+	function normalizeFolderPath(value) {
+		const raw = typeof value === 'string' ? value : (value ?? '').toString();
+		const normalized = raw
+			.trim()
+			.replace(/\\/g, '/')
+			.split('/')
+			.map(part => part.trim())
+			.filter(Boolean)
+			.join('/');
+		return normalized || 'Inbox';
+	}
+
+		// 需要被控制显隐的左侧栏卡片
+		const searchStatsContainer = document.querySelector('.sidebar-search-container');
+		const foldersSectionWrapper = document.getElementById('folders-section-wrapper');
+		const tagsSectionWrapper = document.getElementById('tags-section-wrapper');
 
 	// --- 富文本编辑相关元素 ---
 	const fsFontsizeSelector = document.getElementById('fs-fontsize-selector');
@@ -4525,12 +4307,9 @@
 	const fsColorPopover = document.getElementById('fs-color-popover');
 	const fsColorPalette = fsColorPopover.querySelector('.color-palette.fscolor-palette');
 
-	const waterfallToggleBtn = document.getElementById('waterfall-toggle-btn');
-	const wideModeToggleBtn = document.getElementById('wide-mode-toggle-btn');
-	const notesSection = document.getElementById('notes-section');
-
-	const heatmapContainerWrapper = document.getElementById('heatmap-container-wrapper');
-	const heatmapTooltip = document.getElementById('heatmap-tooltip');
+		const waterfallToggleBtn = document.getElementById('waterfall-toggle-btn');
+		const wideModeToggleBtn = document.getElementById('wide-mode-toggle-btn');
+		const notesSection = document.getElementById('notes-section');
 	const imgurClientIdWrapper = document.getElementById('imgur-client-id-wrapper');
 	const imgurClientIdInput = document.getElementById('imgur-client-id');
 	const uploadDestinationRadios = document.querySelectorAll('input[name="upload-destination"]');
@@ -4860,20 +4639,19 @@
 				await openLinkDecisionPanelForNote(noteId, reminder);
 				break;
 			}
-			case 'delete': {
-				if (!noteElement) return;
-				const confirmed = await showCustomConfirm('Are you sure you want to delete this note?');
-				if (!confirmed) return;
-				waterfallObserver.unobserve(noteElement);
-				try {
-					await fetch(`/api/notes/${noteId}`, { method: 'DELETE' });
-					noteElement.remove();
-					loadAndRenderTags();
-					loadAndRenderTimeline();
-					loadAndRenderStats();
-				} catch (error) {
-					showCustomAlert(error.message, 'error');
-				}
+				case 'delete': {
+					if (!noteElement) return;
+					const confirmed = await showCustomConfirm('Are you sure you want to delete this note?');
+					if (!confirmed) return;
+					waterfallObserver.unobserve(noteElement);
+					try {
+						await fetch(`/api/notes/${noteId}`, { method: 'DELETE' });
+						noteElement.remove();
+						loadAndRenderTags();
+						loadAndRenderFolders();
+					} catch (error) {
+						showCustomAlert(error.message, 'error');
+					}
 				break;
 			}
 		}
@@ -5500,17 +5278,7 @@
 		}
 	});
 
-	function scrollToHeatmapEnd() {
-		// requestAnimationFrame 确保在浏览器下一次绘制前执行，此时 DOM 元素尺寸已计算完毕
-		requestAnimationFrame(() => {
-			const scrollContainer = document.getElementById('heatmap-scroll-container');
-			if (scrollContainer) {
-				scrollContainer.scrollLeft = scrollContainer.scrollWidth;
-			}
-		});
-	}
-
-	function applyViewModes() {
+		function applyViewModes() {
 		// 瀑布流模式
 		if (appState.isWaterfall) {
 			notesSection.classList.add('waterfall-mode');
@@ -5532,9 +5300,8 @@
 		} else {
 			appLayoutContainer.classList.remove('full-width-mode');
 			wideModeToggleBtn.classList.remove('active');
+			}
 		}
-		scrollToHeatmapEnd();
-	}
 
 	waterfallToggleBtn.addEventListener('click', () => {
 		appState.isWaterfall = !appState.isWaterfall;
@@ -5719,16 +5486,13 @@
 			document.documentElement.style.setProperty('--surface-input-bg', 'var(--bg-color)');
 		}
 
-		searchStatsContainer.style.display = settings.showSearchBar ? '' : 'none';
-		statsCard.style.display = settings.showStatsCard ? '' : 'none';
-		calendarWrapper.style.display = settings.showCalendar ? '' : 'none';
-		tagsSectionWrapper.style.display = settings.showTags ? '' : 'none';
-		timelineSectionWrapper.style.display = settings.showTimeline ? '' : 'none';
-		rightSidebar.style.display = settings.showRightSidebar ? '' : 'none';
-		heatmapContainerWrapper.style.display = settings.showHeatmap ? '' : 'none';
-		notesSection.classList.toggle('date-grouping-enabled', settings.enableDateGrouping);
+			searchStatsContainer.style.display = settings.showSearchBar ? '' : 'none';
+			foldersSectionWrapper.style.display = settings.showFolders ? '' : 'none';
+			tagsSectionWrapper.style.display = settings.showTags ? '' : 'none';
+			rightSidebar.style.display = settings.showRightSidebar ? '' : 'none';
+			notesSection.classList.toggle('date-grouping-enabled', settings.enableDateGrouping);
 
-		const areAllSidebarsHidden = !settings.showSearchBar && !settings.showStatsCard && !settings.showCalendar && !settings.showTags && !settings.showTimeline;
+			const areAllSidebarsHidden = !settings.showSearchBar && !settings.showFolders && !settings.showTags;
 		const currentDest = settings.imageUploadDestination || 'local';
 		const radioToCheck = document.getElementById(`upload-dest-${currentDest}`);
 		if (radioToCheck) {
@@ -5768,13 +5532,12 @@
 			appLayoutContainer.classList.remove('glass-effect');
 			const authForm = document.querySelector('.auth-form');
 			if (authForm) authForm.classList.remove('glass-effect');
-		}
-		document.documentElement.style.setProperty('--bg-blur', `${settings.backgroundBlur}px`);
-		document.documentElement.style.setProperty('--bg-opacity', settings.backgroundOpacity);
-		scrollToHeatmapEnd();
+			}
+			document.documentElement.style.setProperty('--bg-blur', `${settings.backgroundBlur}px`);
+			document.documentElement.style.setProperty('--bg-opacity', settings.backgroundOpacity);
 
-		document.documentElement.style.setProperty('--waterfall-card-width', `${settings.waterfallCardWidth}px`);
-	}
+			document.documentElement.style.setProperty('--waterfall-card-width', `${settings.waterfallCardWidth}px`);
+		}
 
 	/**
 	 * 将当前加载的设置值，同步到设置弹框的控件上
@@ -5782,19 +5545,16 @@
 	async function updateSettingsModalControls() {
 		const isDarkMode = document.body.dataset.theme === 'dark';
 		const currentSurfaceColor = isDarkMode ? settings.surfaceColorDark : settings.surfaceColor;
-		document.getElementById('surface-opacity-slider').value = settings.surfaceOpacity;
-		document.getElementById('surface-color-picker-preview').style.backgroundColor = currentSurfaceColor;
-		document.getElementById('surface-hex-color-input').value = currentSurfaceColor;
-		document.getElementById('surface-color-picker-input').value = currentSurfaceColor;
-		toggleSearchBar.checked = settings.showSearchBar;
-		toggleStatsCard.checked = settings.showStatsCard;
-		toggleCalendar.checked = settings.showCalendar;
-		toggleTags.checked = settings.showTags;
-		toggleTimeline.checked = settings.showTimeline;
-		toggleRightSidebar.checked = settings.showRightSidebar;
-		toggleEditorInWaterfall.checked = settings.hideEditorInWaterfall;
-		toggleHeatmap.checked = settings.showHeatmap;
-		bgOpacitySlider.value = settings.backgroundOpacity;
+			document.getElementById('surface-opacity-slider').value = settings.surfaceOpacity;
+			document.getElementById('surface-color-picker-preview').style.backgroundColor = currentSurfaceColor;
+			document.getElementById('surface-hex-color-input').value = currentSurfaceColor;
+			document.getElementById('surface-color-picker-input').value = currentSurfaceColor;
+			toggleSearchBar.checked = settings.showSearchBar;
+			toggleFolders.checked = settings.showFolders;
+			toggleTags.checked = settings.showTags;
+			toggleRightSidebar.checked = settings.showRightSidebar;
+			toggleEditorInWaterfall.checked = settings.hideEditorInWaterfall;
+			bgOpacitySlider.value = settings.backgroundOpacity;
 		bgImageUrl.value = settings.backgroundImage.startsWith('data:') ? '' : settings.backgroundImage; // 不显示base64
 		bgBlurSlider.value = settings.backgroundBlur;
 		waterfallWidthSlider.value = settings.waterfallCardWidth;
@@ -5860,34 +5620,22 @@
 				handleSurfaceColorChange(rawValue);
 			}
 		});
-		toggleSearchBar.addEventListener('change', (e) => {
-			settings.showSearchBar = e.target.checked;
-			applySettings();
-		});
-		toggleStatsCard.addEventListener('change', (e) => {
-			settings.showStatsCard = e.target.checked;
-			applySettings();
-		});
-		toggleCalendar.addEventListener('change', (e) => {
-			settings.showCalendar = e.target.checked;
-			applySettings();
-		});
-		toggleTags.addEventListener('change', (e) => {
-			settings.showTags = e.target.checked;
-			applySettings();
-		});
-		toggleTimeline.addEventListener('change', (e) => {
-			settings.showTimeline = e.target.checked;
-			applySettings();
-		});
-		toggleRightSidebar.addEventListener('change', (e) => {
-			settings.showRightSidebar = e.target.checked;
-			applySettings();
-		});
-		toggleHeatmap.addEventListener('change', (e) => {
-			settings.showHeatmap = e.target.checked;
-			applySettings();
-		});
+			toggleSearchBar.addEventListener('change', (e) => {
+				settings.showSearchBar = e.target.checked;
+				applySettings();
+			});
+			toggleFolders.addEventListener('change', (e) => {
+				settings.showFolders = e.target.checked;
+				applySettings();
+			});
+			toggleTags.addEventListener('change', (e) => {
+				settings.showTags = e.target.checked;
+				applySettings();
+			});
+			toggleRightSidebar.addEventListener('change', (e) => {
+				settings.showRightSidebar = e.target.checked;
+				applySettings();
+			});
 		uploadDestinationRadios.forEach(radio => {
 			radio.addEventListener('change', (e) => {
 				const destination = e.target.value;
@@ -6105,21 +5853,21 @@
 	});
 
 
-	/**
-	 * 初始化侧边栏的折叠状态
-	 * 从 localStorage 读取用户的偏好并应用
-	 */
-	function initializeCollapsibleSidebars() {
-		const sections = ['tags-section-wrapper', 'timeline-section-wrapper'];
+		/**
+		 * 初始化侧边栏的折叠状态
+		 * 从 localStorage 读取用户的偏好并应用
+		 */
+		function initializeCollapsibleSidebars() {
+			const sections = ['folders-section-wrapper', 'tags-section-wrapper'];
 
-		sections.forEach(sectionId => {
-			const sectionElement = document.getElementById(sectionId);
-			// 读取 localStorage，如果值为 'true'，则添加 is-collapsed 类
-			if (localStorage.getItem(`sidebar-${sectionId}-collapsed`) === 'true') {
-				sectionElement.classList.add('is-collapsed');
-			}
-		});
-	}
+			sections.forEach(sectionId => {
+				const sectionElement = document.getElementById(sectionId);
+				// 读取 localStorage，如果值为 'true'，则添加 is-collapsed 类
+				if (sectionElement && localStorage.getItem(`sidebar-${sectionId}-collapsed`) === 'true') {
+					sectionElement.classList.add('is-collapsed');
+				}
+			});
+		}
 
 	// 使用事件委托，为所有折叠按钮添加点击事件
 	document.getElementById('app-layout-container').addEventListener('click', (e) => {
@@ -6134,155 +5882,7 @@
 		}
 	});
 
-	async function loadAndRenderStats() {
-		try {
-			const response = await fetch('/api/stats');
-			if (!response.ok) throw new Error('Failed to fetch stats');
-			const stats = await response.json();
-
-			// 计算天数
-			let days = 0;
-			if (stats.oldestNoteTimestamp) {
-				const oldestDate = new Date(stats.oldestNoteTimestamp);
-				const today = new Date();
-				// 设置时间为当天的开始，避免时区和小时差异导致计算错误
-				oldestDate.setHours(0, 0, 0, 0);
-				today.setHours(0, 0, 0, 0);
-
-				const diffTime = Math.abs(today - oldestDate);
-				const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-				days = diffDays;
-			}
-			statsDays.textContent = days;
-			statsMemos.textContent = stats.memos;
-			statsTags.textContent = stats.tags;
-		} catch (error) {
-			console.error('Error loading stats:', error);
-			statsDays.textContent = '0';
-			statsMemos.textContent = '0';
-			statsTags.textContent = '0';
-		}
-	}
-	async function loadAndRenderHeatmap(timelineData) {
-		try {
-			const countsByDate = new Map();
-			for (const year in timelineData) {
-				for (const month in timelineData[year].months) {
-					for (const day in timelineData[year].months[month].days) {
-						const count = timelineData[year].months[month].days[day].count;
-						const monthPadded = month.toString().padStart(2, '0');
-						const dayPadded = day.toString().padStart(2, '0');
-						const dateString = `${year}-${monthPadded}-${dayPadded}`;
-						countsByDate.set(dateString, count);
-					}
-				}
-			}
-			notesDataByDate.clear();
-			countsByDate.forEach((count, dateString) => {
-				notesDataByDate.set(dateString, count);
-			});
-			calendarInstance = new Calendar(calendarWrapper, notesDataByDate);
-			const today = new Date();
-			const daysToShow = 180;
-			const grid = document.createElement('div');
-			grid.id = 'heatmap-grid';
-
-			const firstDateToRender = new Date(today);
-			firstDateToRender.setDate(today.getDate() - (daysToShow - 1));
-			const startDayOfWeek = (firstDateToRender.getDay() + 6) % 7;
-			for (let i = 0; i < startDayOfWeek; i++) {
-				const placeholder = document.createElement('div');
-				placeholder.className = 'heatmap-day placeholder';
-				grid.appendChild(placeholder);
-			}
-			for (let i = 0; i < daysToShow; i++) {
-				const date = new Date(firstDateToRender);
-				date.setDate(firstDateToRender.getDate() + i);
-
-				const year = date.getFullYear();
-				const month = (date.getMonth() + 1).toString().padStart(2, '0');
-				const dayOfMonth = date.getDate().toString().padStart(2, '0');
-				const dateString = `${year}-${month}-${dayOfMonth}`;
-
-				const count = countsByDate.get(dateString) || 0;
-
-				let level = 0;
-				if (count > 0 && count <= 2) level = 1;
-				else if (count > 2 && count <= 5) level = 2;
-				else if (count > 5 && count <= 8) level = 3;
-				else if (count > 8) level = 4;
-
-				const dayElement = document.createElement('div');
-				dayElement.className = 'heatmap-day';
-				dayElement.dataset.date = dateString;
-				dayElement.dataset.count = count;
-				dayElement.dataset.level = level;
-				grid.appendChild(dayElement);
-			}
-
-			heatmapContainerWrapper.innerHTML = '';
-			const scrollContainer = document.createElement('div');
-			scrollContainer.id = 'heatmap-scroll-container';
-			scrollContainer.appendChild(grid);
-			heatmapContainerWrapper.appendChild(scrollContainer);
-
-			scrollToHeatmapEnd();
-			initializeHeatmapDragToScroll();
-
-		} catch (error) {
-			console.error('Error loading heatmap:', error);
-			heatmapContainerWrapper.innerHTML = '<p style="font-size: 0.8rem; color: var(--text-secondary);">Could not load activity data.</p>';
-		}
-	}
-
-	// --- 热力图交互事件 (事件委托) ---
-	heatmapContainerWrapper.addEventListener('mouseover', (e) => {
-		const dayElement = e.target.closest('.heatmap-day');
-		if (dayElement) {
-			const date = dayElement.dataset.date;
-			const count = dayElement.dataset.count;
-			const countText = count === '1' ? '1 note' : `${count} notes`;
-
-			heatmapTooltip.textContent = `${countText} on ${date}`;
-			heatmapTooltip.style.display = 'block';
-		}
-	});
-
-	heatmapContainerWrapper.addEventListener('mousemove', (e) => {
-		// 让 tooltip 跟随鼠标移动
-		heatmapTooltip.style.left = `${e.pageX}px`;
-		heatmapTooltip.style.top = `${e.pageY}px`;
-	});
-
-	heatmapContainerWrapper.addEventListener('mouseout', () => {
-		heatmapTooltip.style.display = 'none';
-	});
-
-	heatmapContainerWrapper.addEventListener('click', (e) => {
-		const dayElement = e.target.closest('.heatmap-day');
-		if (dayElement && dayElement.dataset.count > 0) {
-			const dateString = dayElement.dataset.date; // "YYYY-MM-DD"
-
-			// --- 复用之前的日期筛选逻辑 ---
-			const [year, month, day] = dateString.split('-').map(Number);
-			const monthIndex = month - 1;
-
-			const startOfDay = new Date(year, monthIndex, day);
-			const endOfDay = new Date(year, monthIndex, day + 1);
-
-			appState.filters.date = {
-				startTimestamp: startOfDay.getTime(),
-				endTimestamp: endOfDay.getTime()
-			};
-
-			document.querySelectorAll('#timeline-container .timeline-item.active').forEach(i => i.classList.remove('active'));
-			clearFilterBtn.classList.add('visible');
-
-			reloadNotes();
-		}
-	});
-
-	let searchDebounceTimer;
+		let searchDebounceTimer;
 	// 防抖函数：延迟执行，避免频繁请求 API
 	function debounce(func, delay) {
 		return function(...args) {
@@ -7616,22 +7216,21 @@
 		appContainer.style.display = 'none';
 		document.body.classList.add('auth-visible');
 	};
-	const showAppScreen = () => {
-		if (load) return;
-		load = true;
-		authContainer.style.display = 'none';
-		appContainer.style.display = 'block';
-		document.body.classList.remove('auth-visible');
-		document.getElementById('app-layout-container').classList.add('app-visible');
-		// 确保只有在登录成功后才执行这些操作
-		initializeCollapsibleSidebars(); // 初始化侧边栏折叠状态
-		initializeViewMode(); // 初始化宽屏模式
-		updateEditorVisibility();
-		loadAndRenderStats();
-		loadAndRenderTags();
-		loadAndRenderTimeline();
-		initializeSettings();
-	};
+		const showAppScreen = () => {
+			if (load) return;
+			load = true;
+			authContainer.style.display = 'none';
+			appContainer.style.display = 'block';
+			document.body.classList.remove('auth-visible');
+			document.getElementById('app-layout-container').classList.add('app-visible');
+			// 确保只有在登录成功后才执行这些操作
+			initializeCollapsibleSidebars(); // 初始化侧边栏折叠状态
+			initializeViewMode(); // 初始化宽屏模式
+			updateEditorVisibility();
+			loadAndRenderTags();
+			loadAndRenderFolders();
+			initializeSettings();
+		};
 
 	function showCustomAlert(message, type = 'info') {
 		customAlertMessage.textContent = message;
@@ -8020,6 +7619,9 @@
 			if (appState.filters.tag) {
 				url.searchParams.set('tag', appState.filters.tag);
 			}
+			if (appState.filters.folder) {
+				url.searchParams.set('folder', normalizeFolderPath(appState.filters.folder));
+			}
 			if (appState.filters.date) {
 				url.searchParams.set('startTimestamp', appState.filters.date.startTimestamp);
 				url.searchParams.set('endTimestamp', appState.filters.date.endTimestamp);
@@ -8103,6 +7705,7 @@
 		const noteId = note.id;
 		noteElement.dataset.id = noteId;
 		const time = formatTimestamp(note.updated_at);
+		const folderName = normalizeFolderPath(note.folder);
 		let editedIndicatorHtml = '';
 		// if (note.updated_at !== note.created_at) {
 		// 	const editedTime = formatTimestamp(note.updated_at);
@@ -8165,6 +7768,7 @@
 									<div class='note-header'>
 									<div class='note-meta'> ${index}
 										<span title='${time.absolute}'>${time.relative}</span>
+										<span class='note-folder-badge' title='Folder'>${escapeHtml(folderName)}</span>
 										${editedIndicatorHtml}
 									</div>
 											<div class='note-actions view-mode'>
@@ -8185,6 +7789,7 @@
 															<input type="checkbox" class="update-timestamp-toggle" checked>
 															<span>Keep Time</span>
 													</label>
+													<input type='text' class='edit-folder-input' value='${escapeHtml(folderName)}' title='Folder'>
 													<label class='icon-btn' title='Add files'>
 															<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='currentColor'><path d='M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z'></path></svg>
 															<input type='file' class='edit-file-input' multiple style='display:none;'>
@@ -8601,6 +8206,9 @@
 
 		const formData = new FormData();
 		formData.append('content', noteInput.value);
+		const normalizedFolderForCreate = normalizeFolderPath(noteFolderInput.value);
+		noteFolderInput.value = normalizedFolderForCreate === 'Inbox' ? '' : normalizedFolderForCreate;
+		formData.append('folder', normalizedFolderForCreate);
 		Array.from(noteFile.files).forEach(file => {
 			if (!file.type.startsWith('image/')) {
 				formData.append('file', file);
@@ -8629,30 +8237,30 @@
 		}
 	});
 
-	const refreshNotes = () => {
-		appState.filters.query = '';
-		appState.filters.tag = null;
-		appState.filters.date = null;
-		globalSearchInput.value = '';
-		clearSearchBtn.style.display = 'none';
+		const refreshNotes = () => {
+			appState.filters.query = '';
+			appState.filters.tag = null;
+			appState.filters.folder = null;
+			globalSearchInput.value = '';
+			clearSearchBtn.style.display = 'none';
+			noteFolderInput.value = '';
 
-		// 重置UI
-		document.querySelectorAll('.timeline-item.active, .tag-item.active').forEach(i => i.classList.remove('active'));
-		clearFilterBtn.classList.remove('visible');
-		clearTagsBtn.classList.remove('visible');
+			// 重置UI
+			document.querySelectorAll('.tag-item.active, .folder-item.active').forEach(i => i.classList.remove('active'));
+			clearTagsBtn.classList.remove('visible');
+			clearFolderBtn.classList.remove('visible');
 
-		// 如果当前不在 home 模式，切换回去
-		if (appState.baseMode !== 'home') {
-			appState.baseMode = 'home';
-			updateSidebarTabsUI();
-		}
+			// 如果当前不在 home 模式，切换回去
+			if (appState.baseMode !== 'home') {
+				appState.baseMode = 'home';
+				updateSidebarTabsUI();
+			}
 
-		reloadNotes();
-		// 重新加载侧边栏数据
-		loadAndRenderTags();
-		loadAndRenderTimeline();
-		loadAndRenderStats();
-	};
+			reloadNotes();
+			// 重新加载侧边栏数据
+			loadAndRenderTags();
+			loadAndRenderFolders();
+		};
 	refreshBtn.addEventListener('click', refreshNotes);
 
 	const imagePreviewModal = document.getElementById('image-preview-modal');
@@ -8931,6 +8539,10 @@
 				// 2. 将 textarea 的内容重置为原始文本
 				const editTextarea = noteElement.querySelector('.edit-textarea');
 				editTextarea.value = originalNoteData.content;
+				const editFolderInput = noteElement.querySelector('.edit-folder-input');
+				if (editFolderInput) {
+					editFolderInput.value = originalNoteData.folder || 'Inbox';
+				}
 
 				// 3. 重置高度，以防文本变短后留下空白
 				autoResizeTextarea(editTextarea);
@@ -8977,6 +8589,12 @@
 
 			const formData = new FormData();
 			formData.append('content', noteElement.querySelector('.edit-textarea').value.trim());
+			const editFolderInput = noteElement.querySelector('.edit-folder-input');
+			const normalizedFolderForEdit = normalizeFolderPath(editFolderInput?.value || '');
+			if (editFolderInput) {
+				editFolderInput.value = normalizedFolderForEdit;
+			}
+			formData.append('folder', normalizedFolderForEdit);
 
 			const timestampToggle = noteElement.querySelector('.update-timestamp-toggle');
 			const shouldUpdate = !timestampToggle.checked;
@@ -9003,8 +8621,7 @@
 					allNotesCache[noteIndex] = updatedNote;
 				}
 				loadAndRenderTags();
-				loadAndRenderTimeline();
-				loadAndRenderStats();
+				loadAndRenderFolders();
 			} catch (error) {
 				showCustomAlert(error.message, 'error');
 				saveEditBtn.disabled = false;
@@ -9139,173 +8756,7 @@
 		}
 	});
 
-	// 获取并渲染时间线和热力图
-	async function loadAndRenderTimeline() {
-		const timelineContainer = document.getElementById('timeline-container');
-		try {
-			const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-			const apiUrl = `/api/notes/timeline?timezone=${encodeURIComponent(userTimezone)}`;
-			const response = await fetch(apiUrl);
-			if (!response.ok) throw new Error('Failed to fetch timeline');
-			const timelineData = await response.json();
-			loadAndRenderHeatmap(timelineData);
-
-			timelineContainer.innerHTML = '';
-			const rootUl = document.createElement('ul');
-			const sortedYears = Object.keys(timelineData).sort((a, b) => b - a);
-
-			for (const year of sortedYears) {
-				const yearData = timelineData[year];
-				const yearLi = createTimelineNode('year', year, yearData.count, { year });
-				rootUl.appendChild(yearLi);
-
-				const monthUl = document.createElement('ul');
-				monthUl.className = 'timeline-children';
-				yearLi.appendChild(monthUl);
-
-				monthUl.style.display = 'block'; //直接设置月份列表为可见
-				const yearToggle = yearLi.querySelector('.timeline-toggle');
-				if (yearToggle) {
-					yearToggle.classList.add('expanded');
-				}
-				const sortedMonths = Object.keys(yearData.months).sort((a, b) => b - a);
-				for (const month of sortedMonths) {
-					const monthData = yearData.months[month];
-					const monthLi = createTimelineNode('month', month, monthData.count, { year, month });
-					monthUl.appendChild(monthLi);
-
-					const dayUl = document.createElement('ul');
-					dayUl.className = 'timeline-children';
-					monthLi.appendChild(dayUl);
-					const sortedDays = Object.keys(monthData.days).sort((a, b) => b - a);
-					for (const day of sortedDays) {
-						const dayData = monthData.days[day];
-						const dayLi = createTimelineNode('day', day, dayData.count, { year, month, day });
-						dayUl.appendChild(dayLi);
-					}
-				}
-			}
-			timelineContainer.appendChild(rootUl);
-
-		} catch (error) {
-			console.error('Error loading timeline:', error);
-			timelineContainer.innerHTML = '<p>Error loading timeline.</p>';
-		}
-	}
-
-	// 创建时间线节点的辅助函数，以支持新的交互模型
-	function createTimelineNode(level, label, count, dateParts = {}) {
-		const li = document.createElement('li');
-		const itemDiv = document.createElement('div');
-		itemDiv.className = 'timeline-item';
-		itemDiv.dataset.level = level;
-		// 存储日期信息用于筛选
-		if (dateParts.year) itemDiv.dataset.year = dateParts.year;
-		if (dateParts.month) itemDiv.dataset.month = dateParts.month;
-		if (dateParts.day) itemDiv.dataset.day = dateParts.day;
-
-		const isExpandable = level === 'year' || level === 'month';
-
-		let filterButtonHtml = '';
-		if (isExpandable) {
-			filterButtonHtml = `
-                <button class='timeline-filter-btn' title='Filter notes for ${label}'>
-                    <svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 4.5h18'/><path d='M3 9.5h18'/><path d='M3 14.5h18'/><path d='M3 19.5h18'/></svg>
-                </button>
-            `;
-		}
-
-		itemDiv.innerHTML = `
-            <span class='timeline-label'>
-                ${isExpandable ? `<svg class='timeline-toggle' viewBox='0 0 24 24'><path fill='currentColor' d='M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z'></path></svg>` : '<span style="width:24px"></span>'}
-                ${label}
-            </span>
-            <div class='timeline-actions'>
-                <span class='timeline-count'>${count}</span>
-                ${filterButtonHtml}
-            </div>
-        `;
-		li.appendChild(itemDiv);
-		return li;
-	}
-
-	const clearFilterBtn = document.getElementById('clear-filter-btn');
-	clearFilterBtn.innerHTML = `
-        <svg xmlns='http://www.w3.org/2000/svg' height='24px' viewBox='0 0 24 24' width='24px' fill='currentColor'>
-            <path d='M0 0h24v24H0V0z' fill='none'/>
-            <path d='M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z'/>
-        </svg>
-    `;
-
-	clearFilterBtn.addEventListener('click', () => {
-		appState.filters.date = null;
-		document.querySelectorAll('#timeline-container .timeline-item.active').forEach(i => i.classList.remove('active'));
-		clearFilterBtn.classList.remove('visible');
-		reloadNotes();
-	});
-
-	// 处理时间线点击事件，由客户端计算精确时间戳
-	document.getElementById('timeline-container').addEventListener('click', (event) => {
-		const item = event.target.closest('.timeline-item');
-		if (!item) return;
-
-		const filterBtn = event.target.closest('.timeline-filter-btn');
-		const level = item.dataset.level;
-
-		const applyFilter = (targetItem) => {
-			// --- 1. 从 data-* 属性中获取年/月/日 (并转换为数字) ---
-			const year = parseInt(targetItem.dataset.year);
-			const month = targetItem.dataset.month ? parseInt(targetItem.dataset.month) : null;
-			const day = targetItem.dataset.day ? parseInt(targetItem.dataset.day) : null;
-
-			// --- 2. 使用本地时区计算精确的开始和结束时间戳 ---
-			let startOfDay, endOfDay;
-			const monthIndex = month ? month - 1 : 0;
-
-			if (day) { // 精确到天
-				startOfDay = new Date(year, monthIndex, day); // 本地时间的当天 00:00:00
-				endOfDay = new Date(year, monthIndex, day + 1); // 本地时间的下一天 00:00:00
-			} else if (month) { // 精确到月
-				startOfDay = new Date(year, monthIndex, 1); // 本地时间的当月第一天 00:00:00
-				endOfDay = new Date(year, monthIndex + 1, 1); // 本地时间的下个月第一天 00:00:00
-			} else { // 精确到年
-				startOfDay = new Date(year, 0, 1); // 本地时间的当年第一天 00:00:00
-				endOfDay = new Date(year + 1, 0, 1); // 本地时间的下一年第一天 00:00:00
-			}
-
-			appState.filters.date = {
-				startTimestamp: startOfDay.getTime(),
-				endTimestamp: endOfDay.getTime()
-			};
-
-			document.querySelectorAll('#timeline-container .timeline-item.active').forEach(activeItem => {
-				activeItem.classList.remove('active');
-			});
-			targetItem.classList.add('active');
-			clearFilterBtn.classList.add('visible');
-			reloadNotes();
-		};
-
-		if (filterBtn) {
-			applyFilter(item);
-			return;
-		}
-		if (level === 'day') {
-			applyFilter(item);
-			return;
-		}
-		if (level === 'year' || level === 'month') {
-			const toggle = item.querySelector('.timeline-toggle');
-			const childrenUl = item.parentElement.querySelector('.timeline-children');
-			if (childrenUl && toggle) {
-				const isExpanded = childrenUl.style.display === 'block';
-				childrenUl.style.display = isExpanded ? 'none' : 'block';
-				toggle.classList.toggle('expanded', !isExpanded);
-			}
-		}
-	});
-
-	async function loadAndRenderTags() {
+		async function loadAndRenderTags() {
 		const tagsContainer = document.getElementById('tags-container');
 		try {
 			const response = await fetch('/api/tags');
@@ -9337,6 +8788,168 @@
 			tagsContainer.innerHTML = '<p>Error loading tags.</p>';
 		}
 	}
+
+	const folderTreeState = {
+		rows: []
+	};
+
+	function buildFolderTree(rows) {
+		const root = { children: new Map() };
+		rows.forEach(row => {
+			const path = normalizeFolderPath(row.name);
+			const count = Number(row.count) || 0;
+			const segments = path.split('/').filter(Boolean);
+			if (segments.length === 0) {
+				return;
+			}
+
+			let current = root;
+			const pathParts = [];
+			segments.forEach(segment => {
+				pathParts.push(segment);
+				const nodePath = pathParts.join('/');
+				const nodeKey = nodePath.toLowerCase();
+				if (!current.children.has(nodeKey)) {
+					current.children.set(nodeKey, {
+						path: nodePath,
+						name: segment,
+						selfCount: 0,
+						totalCount: 0,
+						children: new Map()
+					});
+				}
+				current = current.children.get(nodeKey);
+			});
+			current.selfCount += count;
+		});
+
+		const sortNodes = (nodes) => nodes.sort((a, b) => (
+			a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+		));
+
+		const finalizeNode = (node) => {
+			const children = sortNodes(Array.from(node.children.values()));
+			let total = node.selfCount;
+			children.forEach(child => {
+				total += finalizeNode(child);
+			});
+			node.children = children;
+			node.totalCount = total;
+			return total;
+		};
+
+		const roots = sortNodes(Array.from(root.children.values()));
+		roots.forEach(node => finalizeNode(node));
+		return roots;
+	}
+
+	function renderFolderNode(node, activeFolderPath, depth) {
+		const li = document.createElement('li');
+		const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+		const nodeKey = node.path.toLowerCase();
+		const isCollapsed = hasChildren && collapsedFolderPaths.has(nodeKey);
+		const isActive = activeFolderPath === nodeKey;
+		const toggleHtml = hasChildren
+			? `<button class='folder-toggle' title='Toggle folder'>${isCollapsed ? '▸' : '▾'}</button>`
+			: `<span class='folder-toggle-placeholder'></span>`;
+
+		li.innerHTML = `
+			<div class='folder-item${isActive ? ' active' : ''}${hasChildren ? '' : ' is-leaf'}'
+					 data-folder-path='${escapeHtml(node.path)}'
+					 data-folder-key='${escapeHtml(nodeKey)}'
+					 data-depth='${depth}'
+					 title='Filter by folder: ${escapeHtml(node.path)}'>
+				${toggleHtml}
+				<span class='folder-label'>${escapeHtml(node.name)}</span>
+				<span class='folder-count'>${node.totalCount}</span>
+			</div>
+		`;
+
+		if (hasChildren && !isCollapsed) {
+			const childUl = document.createElement('ul');
+			childUl.className = 'folder-children';
+			node.children.forEach(child => {
+				childUl.appendChild(renderFolderNode(child, activeFolderPath, depth + 1));
+			});
+			li.appendChild(childUl);
+		}
+
+		return li;
+	}
+
+	function renderFolderTree() {
+		const foldersContainer = document.getElementById('folders-container');
+		const rows = folderTreeState.rows;
+		const activeFolderPath = appState.filters.folder
+			? normalizeFolderPath(appState.filters.folder).toLowerCase()
+			: null;
+		foldersContainer.innerHTML = '<ul></ul>';
+		const listElement = foldersContainer.querySelector('ul');
+		if (!rows.length) {
+			listElement.innerHTML = '<li><div class="folder-item-placeholder">No folders yet.</div></li>';
+			clearFolderBtn.classList.toggle('visible', Boolean(activeFolderPath));
+			return;
+		}
+
+		const tree = buildFolderTree(rows);
+		tree.forEach(node => {
+			listElement.appendChild(renderFolderNode(node, activeFolderPath, 0));
+		});
+		clearFolderBtn.classList.toggle('visible', Boolean(activeFolderPath));
+	}
+
+	async function loadAndRenderFolders() {
+		try {
+			const response = await fetch('/api/folders');
+			if (!response.ok) throw new Error('Failed to fetch folders');
+			folderTreeState.rows = await response.json();
+			renderFolderTree();
+		} catch (error) {
+			console.error('Error loading folders:', error);
+			document.getElementById('folders-container').innerHTML = '<p>Error loading folders.</p>';
+		}
+	}
+
+	const clearFolderBtn = document.getElementById('clear-folder-filter-btn');
+	document.getElementById('folders-container').addEventListener('click', (event) => {
+		const toggle = event.target.closest('.folder-toggle');
+		const folderItem = event.target.closest('.folder-item');
+		if (!folderItem) {
+			return;
+		}
+		const folderPath = folderItem.dataset.folderPath;
+		const folderKey = folderItem.dataset.folderKey || normalizeFolderPath(folderPath).toLowerCase();
+		if (toggle) {
+			event.preventDefault();
+			event.stopPropagation();
+			if (collapsedFolderPaths.has(folderKey)) {
+				collapsedFolderPaths.delete(folderKey);
+			} else {
+				collapsedFolderPaths.add(folderKey);
+			}
+			renderFolderTree();
+			return;
+		}
+
+		appState.filters.folder = folderPath;
+		noteFolderInput.value = folderPath === 'Inbox' ? '' : folderPath;
+		reloadNotes();
+	});
+
+	clearFolderBtn.innerHTML = `
+		<svg xmlns='http://www.w3.org/2000/svg' height='24px' viewBox='0 0 24 24' width='24px' fill='currentColor'>
+			<path d='M0 0h24v24H0V0z' fill='none'/>
+			<path d='M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z'/>
+		</svg>
+	`;
+
+	clearFolderBtn.addEventListener('click', () => {
+		appState.filters.folder = null;
+		noteFolderInput.value = '';
+		clearFolderBtn.classList.remove('visible');
+		renderFolderTree();
+		reloadNotes();
+	});
 
 	const clearTagsBtn = document.getElementById('clear-tags-filter-btn');
 	document.getElementById('tags-container').addEventListener('click', (event) => {
@@ -9434,53 +9047,7 @@
 		}
 	});
 
-	function initializeHeatmapDragToScroll() {
-		const scrollContainer = document.getElementById('heatmap-scroll-container');
-		// 如果找不到容器（例如加载失败），则不执行任何操作
-		if (!scrollContainer) return;
-
-		let isDown = false;
-		let isDragging = false;
-		let startX;
-		let scrollLeftStart;
-
-		scrollContainer.addEventListener('mousedown', (e) => {
-			// 阻止默认的文本选择等行为
-			e.preventDefault();
-			isDown = true;
-			isDragging = false; // 每次按下鼠标时，重置拖拽状态
-			scrollContainer.classList.add('active-drag');
-			// 记录起始点
-			startX = e.pageX - scrollContainer.offsetLeft;
-			scrollLeftStart = scrollContainer.scrollLeft;
-		});
-		scrollContainer.addEventListener('mouseleave', () => {
-			isDown = false;
-			scrollContainer.classList.remove('active-drag');
-		});
-
-		scrollContainer.addEventListener('mouseup', () => {
-			isDown = false;
-			scrollContainer.classList.remove('active-drag');
-		});
-
-		scrollContainer.addEventListener('mousemove', (e) => {
-			if (!isDown) return;
-			isDragging = true;
-			const x = e.pageX - scrollContainer.offsetLeft;
-			const walk = (x - startX) * 1.5; //乘以1.5可以增加拖动速度，感觉更灵敏
-			scrollContainer.scrollLeft = scrollLeftStart - walk;
-		});
-
-		scrollContainer.addEventListener('click', (e) => {
-			if (isDragging) {
-				e.preventDefault();
-				e.stopPropagation();
-			}
-		}, true);
-	}
-
-	// document.addEventListener('DOMContentLoaded', () => {
+		// document.addEventListener('DOMContentLoaded', () => {
 		initializeApp();
 		initializeTheme();
 		initializeThemeColor();
