@@ -2446,7 +2446,7 @@
   }
 
   #folders-section-wrapper .sidebar-collapsible-content {
-	padding-left: 0.5rem;
+	padding-left: 0.25rem;
   }
 
   #folders-container ul {
@@ -2455,28 +2455,53 @@
 	margin: 0;
   }
 
-  #folders-container li {
-	margin: 0.25rem 0;
+  #folders-container .folder-tree-root > li {
+	margin: 0.2rem 0;
+  }
+
+  .folder-node {
+	position: relative;
   }
 
   .folder-item {
+	position: relative;
 	display: grid;
-	grid-template-columns: 16px 1fr auto auto;
+	grid-template-columns: 16px 14px 1fr auto auto;
 	align-items: center;
 	gap: 0.4rem;
-	padding: 6px 8px;
-	border-radius: 4px;
-	transition: background-color 0.2s ease;
+	padding: 7px 9px;
+	border-radius: 8px;
+	border: 1px solid transparent;
+	transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
 	cursor: pointer;
   }
 
   .folder-item:hover {
-	background-color: var(--border-color);
+	background-color: color-mix(in srgb, var(--surface-color) 70%, var(--border-color) 30%);
+	border-color: var(--border-color);
+	transform: translateX(1px);
   }
 
   .folder-item.active {
 	background-color: var(--primary-color);
+	border-color: color-mix(in srgb, var(--primary-color) 65%, #000 35%);
 	color: white;
+	box-shadow: 0 6px 14px rgba(0, 0, 0, 0.12);
+  }
+
+  .folder-item.active .folder-toggle,
+  .folder-item.active .folder-action-btn {
+	color: rgba(255, 255, 255, 0.95);
+  }
+
+  .folder-item.is-context:not(.active) {
+	background-color: color-mix(in srgb, var(--primary-color) 9%, var(--surface-color) 91%);
+	border-color: color-mix(in srgb, var(--primary-color) 22%, var(--border-color) 78%);
+  }
+
+  .folder-item:focus-visible {
+	outline: 2px solid var(--primary-color);
+	outline-offset: 1px;
   }
 
   .folder-toggle {
@@ -2485,16 +2510,29 @@
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	border: none;
+	border: 1px solid transparent;
 	background: transparent;
-	color: inherit;
+	color: var(--text-secondary);
 	padding: 0;
 	cursor: pointer;
-	opacity: 0.7;
+	border-radius: 4px;
+	opacity: 0.95;
+	transition: transform 0.16s ease, background-color 0.16s ease, color 0.16s ease;
   }
 
   .folder-toggle:hover {
 	opacity: 1;
+	background: color-mix(in srgb, var(--primary-color) 12%, transparent 88%);
+  }
+
+  .folder-toggle svg {
+	width: 12px;
+	height: 12px;
+	transition: transform 0.16s ease;
+  }
+
+  .folder-toggle.is-collapsed svg {
+	transform: rotate(-90deg);
   }
 
   .folder-toggle-placeholder {
@@ -2503,21 +2541,48 @@
 	display: inline-block;
   }
 
+  .folder-glyph {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	color: color-mix(in srgb, var(--primary-color) 74%, var(--text-secondary) 26%);
+  }
+
+  .folder-glyph svg {
+	width: 14px;
+	height: 14px;
+  }
+
+  .folder-item.active .folder-glyph {
+	color: rgba(255, 255, 255, 0.9);
+  }
+
   .folder-item.is-leaf {
-	grid-template-columns: 16px 1fr auto auto;
+	grid-template-columns: 16px 14px 1fr auto auto;
+  }
+
+  .folder-main {
+	min-width: 0;
+	display: inline-flex;
+	align-items: center;
   }
 
   .folder-label {
+	display: inline-block;
 	word-break: break-all;
-	padding-right: 0.75rem;
+	padding-right: 0.65rem;
+	line-height: 1.35;
+	font-weight: 520;
   }
 
   .folder-count {
-	font-size: 0.8rem;
+	font-size: 0.72rem;
+	font-weight: 620;
 	color: var(--text-secondary);
 	background-color: var(--bg-color);
-	padding: 1px 6px;
-	border-radius: 10px;
+	padding: 2px 7px;
+	border-radius: 999px;
+	border: 1px solid var(--border-color);
 	white-space: nowrap;
   }
 
@@ -2526,7 +2591,8 @@
   }
 
   .folder-item.active .folder-count {
-	background-color: rgba(255, 255, 255, 0.2);
+	background-color: rgba(255, 255, 255, 0.18);
+	border-color: rgba(255, 255, 255, 0.35);
 	color: white;
   }
 
@@ -2547,25 +2613,31 @@
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 18px;
-	height: 18px;
+	width: 20px;
+	height: 20px;
 	padding: 0;
-	border: none;
+	border: 1px solid transparent;
 	background: transparent;
-	color: inherit;
+	color: var(--text-secondary);
 	cursor: pointer;
-	opacity: 0.75;
+	opacity: 0.82;
+	border-radius: 6px;
 	transform: none;
+	transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   }
 
   .folder-action-btn:hover {
-	background: rgba(127, 127, 127, 0.2);
+	background: color-mix(in srgb, var(--primary-color) 12%, transparent 88%);
+	border-color: color-mix(in srgb, var(--primary-color) 26%, var(--border-color) 74%);
+	color: var(--text-color);
 	opacity: 1;
 	transform: none;
   }
 
   .folder-item.active .folder-action-btn:hover {
 	background: rgba(255, 255, 255, 0.2);
+	border-color: rgba(255, 255, 255, 0.3);
+	color: white;
   }
 
   .folder-action-btn:disabled {
@@ -2588,9 +2660,9 @@
   .folder-children {
 	list-style: none;
 	margin: 0;
-	padding-left: 1rem;
-	border-left: 1px solid var(--border-color);
-	margin-left: 0.45rem;
+	padding-left: 0.75rem;
+	border-left: 1px dashed color-mix(in srgb, var(--border-color) 78%, transparent 22%);
+	margin-left: 0.8rem;
   }
 
   #app-layout-container.attachments-mode {
@@ -4368,6 +4440,37 @@
 		}
 	};
 	const collapsedFolderPaths = new Set();
+	const FOLDER_COLLAPSE_STORAGE_KEY = 'memos.folder-tree.collapsed.v1';
+
+	function loadCollapsedFolderState() {
+		try {
+			const raw = localStorage.getItem(FOLDER_COLLAPSE_STORAGE_KEY);
+			if (!raw) {
+				return;
+			}
+			const parsed = JSON.parse(raw);
+			if (!Array.isArray(parsed)) {
+				return;
+			}
+			collapsedFolderPaths.clear();
+			parsed
+				.filter(item => typeof item === 'string' && item.trim())
+				.forEach(item => collapsedFolderPaths.add(item.trim().toLowerCase()));
+		} catch (_error) {
+			// Ignore invalid persisted state.
+		}
+	}
+
+	function persistCollapsedFolderState() {
+		try {
+			const values = Array.from(collapsedFolderPaths.values()).sort((a, b) => a.localeCompare(b));
+			localStorage.setItem(FOLDER_COLLAPSE_STORAGE_KEY, JSON.stringify(values));
+		} catch (_error) {
+			// localStorage might be unavailable in strict contexts.
+		}
+	}
+
+	loadCollapsedFolderState();
 
 	// --- DOM Elements ---
 	const authContainer = document.getElementById('auth-container');
@@ -9520,25 +9623,92 @@
 		});
 	}
 
+	function collectFolderKeys(nodes, output = new Set()) {
+		nodes.forEach(node => {
+			output.add(node.path.toLowerCase());
+			if (Array.isArray(node.children) && node.children.length > 0) {
+				collectFolderKeys(node.children, output);
+			}
+		});
+		return output;
+	}
+
+	function isFolderNodeExpanded(folderKey) {
+		return !collapsedFolderPaths.has(folderKey);
+	}
+
+	function toggleFolderCollapse(folderKey, forceCollapsed = null) {
+		const normalizedKey = normalizeFolderPath(folderKey).toLowerCase();
+		const nextCollapsed = forceCollapsed === null
+			? !collapsedFolderPaths.has(normalizedKey)
+			: Boolean(forceCollapsed);
+		if (nextCollapsed) {
+			collapsedFolderPaths.add(normalizedKey);
+		} else {
+			collapsedFolderPaths.delete(normalizedKey);
+		}
+		persistCollapsedFolderState();
+		renderFolderTree();
+	}
+
+	function selectFolderFilter(folderPath) {
+		appState.filters.folder = normalizeFolderPath(folderPath);
+		syncComposeFolderSelect(appState.filters.folder);
+		renderFolderTree();
+		reloadNotes();
+	}
+
+	function focusFolderItemByKey(folderKey) {
+		const normalizedKey = normalizeFolderPath(folderKey).toLowerCase();
+		const target = Array.from(document.querySelectorAll('#folders-container .folder-item'))
+			.find(item => (item.dataset.folderKey || '').toLowerCase() === normalizedKey);
+		if (target) {
+			target.focus();
+			return true;
+		}
+		return false;
+	}
+
 	function renderFolderNode(node, activeFolderPath, depth) {
 		const li = document.createElement('li');
+		li.className = 'folder-node';
 		const hasChildren = Array.isArray(node.children) && node.children.length > 0;
 		const nodeKey = node.path.toLowerCase();
-		const isCollapsed = hasChildren && collapsedFolderPaths.has(nodeKey);
+		const isCollapsed = hasChildren && !isFolderNodeExpanded(nodeKey);
 		const isActive = activeFolderPath === nodeKey;
+		const isContext = Boolean(activeFolderPath && (activeFolderPath === nodeKey || activeFolderPath.startsWith(`${nodeKey}/`)));
 		const isInbox = nodeKey === 'inbox';
 		const toggleHtml = hasChildren
-			? `<button class='folder-toggle' title='Toggle folder'>${isCollapsed ? '▸' : '▾'}</button>`
+			? `<button class='folder-toggle${isCollapsed ? ' is-collapsed' : ''}' title='Toggle folder' aria-label='Toggle folder'>
+				<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='currentColor'>
+					<path d='M7 10l5 5 5-5z'></path>
+				</svg>
+			</button>`
 			: `<span class='folder-toggle-placeholder'></span>`;
+		const folderGlyphHtml = `
+			<span class='folder-glyph' aria-hidden='true'>
+				<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='currentColor'>
+					<path d='M10 4l2 2h8a2 2 0 0 1 2 2v9a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h5z'></path>
+				</svg>
+			</span>
+		`;
+		const ariaExpanded = hasChildren ? `aria-expanded='${String(!isCollapsed)}'` : '';
 
 		li.innerHTML = `
-			<div class='folder-item${isActive ? ' active' : ''}${hasChildren ? '' : ' is-leaf'}'
+			<div class='folder-item${isActive ? ' active' : ''}${isContext ? ' is-context' : ''}${hasChildren ? '' : ' is-leaf'}'
 					 data-folder-path='${escapeHtml(node.path)}'
 					 data-folder-key='${escapeHtml(nodeKey)}'
 					 data-depth='${depth}'
+					 role='treeitem'
+					 tabindex='0'
+					 aria-selected='${isActive ? 'true' : 'false'}'
+					 ${ariaExpanded}
 					 title='Filter by folder: ${escapeHtml(node.path)}'>
 				${toggleHtml}
-				<span class='folder-label'>${escapeHtml(node.name)}</span>
+				${folderGlyphHtml}
+				<span class='folder-main'>
+					<span class='folder-label'>${escapeHtml(node.name)}</span>
+				</span>
 				<span class='folder-count'>${node.totalCount}</span>
 				<span class='folder-item-actions'>
 					<button class='folder-action-btn' data-action='rename' title='Rename folder' ${isInbox ? 'disabled' : ''}>
@@ -9573,8 +9743,8 @@
 		const activeFolderPath = appState.filters.folder
 			? normalizeFolderPath(appState.filters.folder).toLowerCase()
 			: null;
-		foldersContainer.innerHTML = '<ul></ul>';
-		const listElement = foldersContainer.querySelector('ul');
+		foldersContainer.innerHTML = '<ul class="folder-tree-root" role="tree"></ul>';
+		const listElement = foldersContainer.querySelector('.folder-tree-root');
 		if (!rows.length) {
 			listElement.innerHTML = '<li><div class="folder-item-placeholder">No folders yet.</div></li>';
 			clearFolderBtn.classList.toggle('visible', Boolean(activeFolderPath));
@@ -9582,6 +9752,17 @@
 		}
 
 		const tree = buildFolderTree(rows);
+		const validKeys = collectFolderKeys(tree);
+		let collapseSetChanged = false;
+		Array.from(collapsedFolderPaths.values()).forEach((key) => {
+			if (!validKeys.has(key)) {
+				collapsedFolderPaths.delete(key);
+				collapseSetChanged = true;
+			}
+		});
+		if (collapseSetChanged) {
+			persistCollapsedFolderState();
+		}
 		tree.forEach(node => {
 			listElement.appendChild(renderFolderNode(node, activeFolderPath, 0));
 		});
@@ -9730,19 +9911,70 @@
 		if (toggle) {
 			event.preventDefault();
 			event.stopPropagation();
-			if (collapsedFolderPaths.has(folderKey)) {
-				collapsedFolderPaths.delete(folderKey);
-			} else {
-				collapsedFolderPaths.add(folderKey);
-			}
-			renderFolderTree();
+			toggleFolderCollapse(folderKey);
 			return;
 		}
 
-		appState.filters.folder = folderPath;
-		syncComposeFolderSelect(folderPath);
-		renderFolderTree();
-		reloadNotes();
+		selectFolderFilter(folderPath);
+	});
+
+	document.getElementById('folders-container').addEventListener('keydown', (event) => {
+		const currentItem = event.target.closest('.folder-item');
+		if (!currentItem) {
+			return;
+		}
+
+		const visibleItems = Array.from(document.querySelectorAll('#folders-container .folder-item'));
+		const currentIndex = visibleItems.indexOf(currentItem);
+		if (currentIndex < 0) {
+			return;
+		}
+
+		const folderPath = currentItem.dataset.folderPath;
+		const folderKey = currentItem.dataset.folderKey || normalizeFolderPath(folderPath).toLowerCase();
+		const hasChildren = Boolean(currentItem.querySelector('.folder-toggle'));
+
+		if (event.key === 'ArrowDown') {
+			event.preventDefault();
+			const next = visibleItems[currentIndex + 1];
+			if (next) next.focus();
+			return;
+		}
+		if (event.key === 'ArrowUp') {
+			event.preventDefault();
+			const prev = visibleItems[currentIndex - 1];
+			if (prev) prev.focus();
+			return;
+		}
+		if (event.key === 'ArrowRight') {
+			event.preventDefault();
+			if (hasChildren && !isFolderNodeExpanded(folderKey)) {
+				toggleFolderCollapse(folderKey, false);
+				focusFolderItemByKey(folderKey);
+				return;
+			}
+			const next = visibleItems[currentIndex + 1];
+			if (next) next.focus();
+			return;
+		}
+		if (event.key === 'ArrowLeft') {
+			event.preventDefault();
+			if (hasChildren && isFolderNodeExpanded(folderKey)) {
+				toggleFolderCollapse(folderKey, true);
+				focusFolderItemByKey(folderKey);
+				return;
+			}
+			const parentLi = currentItem.closest('li')?.parentElement?.closest('li');
+			const parentItem = parentLi
+				? Array.from(parentLi.children).find(child => child.classList?.contains('folder-item'))
+				: null;
+			if (parentItem) parentItem.focus();
+			return;
+		}
+		if (event.key === 'Enter' || event.key === ' ') {
+			event.preventDefault();
+			selectFolderFilter(folderPath);
+		}
 	});
 
 	clearFolderBtn.innerHTML = `
