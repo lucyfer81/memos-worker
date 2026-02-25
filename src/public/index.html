@@ -3268,6 +3268,69 @@
 	margin-bottom: 10px;
 	border-left: 3px solid #f59e0b;
   }
+
+  .rss-filter-bar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: flex-end;
+	padding: 4px 0 12px;
+  }
+
+  .rss-filter-item {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	font-size: 12px;
+	color: var(--text-secondary);
+  }
+
+  .rss-filter-item select,
+  .rss-filter-item input {
+	min-height: 34px;
+	padding: 6px 10px;
+	border-radius: 8px;
+	border: 1px solid var(--border-color);
+	background: var(--surface-color);
+	color: var(--text-color);
+  }
+
+  .rss-source-filter input {
+	min-width: 220px;
+  }
+
+  .note-rss-source,
+  .note-rss-state {
+	display: inline-flex;
+	align-items: center;
+	padding: 1px 8px;
+	border-radius: 999px;
+	font-size: 11px;
+	line-height: 1.6;
+  }
+
+  .note-rss-source {
+	background: rgba(var(--primary-color-rgb), 0.12);
+	color: var(--text-color);
+  }
+
+  .note-rss-state {
+	font-weight: 600;
+  }
+
+  .note-rss-state.state-unread {
+	background: rgba(245, 158, 11, 0.18);
+	color: #b45309;
+  }
+
+  .note-rss-state.state-read {
+	background: rgba(16, 185, 129, 0.18);
+	color: #047857;
+  }
+
+  .note.rss-unread {
+	border-left: 3px solid #f59e0b;
+  }
 </style>
 <body class='loading' data-theme='dark'>
 <div id='initial-loader'>
@@ -3476,6 +3539,30 @@
 				</form>
 
 				<div id='notes-section'>
+					<div id='rss-filter-bar' class='rss-filter-bar' style='display: none;'>
+						<label class='rss-filter-item' for='rss-state-filter'>
+							<span>Status</span>
+							<select id='rss-state-filter'>
+								<option value='unread'>Unread</option>
+								<option value='read'>Read</option>
+								<option value='all'>All</option>
+							</select>
+						</label>
+						<label class='rss-filter-item' for='rss-archived-filter'>
+							<span>Archive</span>
+							<select id='rss-archived-filter'>
+								<option value='false'>Active</option>
+								<option value='true'>Archived</option>
+								<option value='all'>All</option>
+							</select>
+						</label>
+						<label class='rss-filter-item rss-source-filter' for='rss-source-filter-input'>
+							<span>Source</span>
+							<input type='search' id='rss-source-filter-input' placeholder='Feed name (exact)'>
+						</label>
+						<button type='button' id='rss-filter-apply-btn' class='btn btn-secondary'>Apply</button>
+						<button type='button' id='rss-filter-clear-btn' class='btn btn-secondary'>Reset</button>
+					</div>
 					<div id='refresh-loader' class='loading-indicator' style='display: none;'>
 						<div class='spinner'></div>
 					</div>
@@ -3524,6 +3611,13 @@
 				<svg xmlns="http://www.w3.org/2000/svg" height="28px" viewBox="0 0 24 24" width="28px" fill="currentColor"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M20.54 5.23l-1.39-1.68C18.88 3.21 18.47 3 18 3H6c-.47 0-.88.21-1.16.55L3.46 5.23C3.17 5.57 3 6.02 3 6.5V19c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6.5c0-.48-.17-.93-.46-1.27zM6.24 5h11.52l.83 1H5.41l.83-1zM5 19V8h14v11H5zm11-5.5l-4 4-4-4 1.41-1.41L11 13.67V10h2v3.67l1.59-1.58L16 13.5z"/></svg>
 				<span>Archive</span>
 			</button>
+			<button id='rss-tab-btn' class='sidebar-tab-btn' data-tab-name='rss' title='RSS'>
+				<svg xmlns='http://www.w3.org/2000/svg' height='28px' viewBox='0 0 24 24' width='28px' fill='currentColor'>
+					<path d='M0 0h24v24H0V0z' fill='none'/>
+					<path d='M6.18 17.82a2.18 2.18 0 1 0 0-4.36 2.18 2.18 0 0 0 0 4.36zM4 4v3c7.18 0 13 5.82 13 13h3c0-8.84-7.16-16-16-16zm0 6v3c3.86 0 7 3.14 7 7h3c0-5.52-4.48-10-10-10z'/>
+				</svg>
+				<span>RSS</span>
+			</button>
 			<button id="attachments-tab-btn" class="sidebar-tab-btn" data-tab-name="attachments" title="Attachments">
 				<svg xmlns="http://www.w3.org/2000/svg" height="28px" viewBox="0 0 24 24" width="28px" fill="currentColor"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/></svg>
 				<span>Files</span>
@@ -3571,6 +3665,18 @@
 	</button>
 	<button class='icon-btn' data-action='archive' title='Archive'>
 		<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="currentColor"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M20.54 5.23l-1.39-1.68C18.88 3.21 18.47 3 18 3H6c-.47 0-.88.21-1.16.55L3.46 5.23C3.17 5.57 3 6.02 3 6.5V19c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6.5c0-.48-.17-.93-.46-1.27zM12 17.5L8 13.5l1.41-1.41L11 13.67V10h2v3.67l1.59-1.58L16 13.5l-4 4zM5.12 5l.83-1h12.1l.83 1H5.12z"/></svg>
+	</button>
+	<button class='icon-btn' data-rss-move='true' data-action='rss-move-reading' title='Move to Reading'>
+		<svg xmlns='http://www.w3.org/2000/svg' height='24px' viewBox='0 0 24 24' width='24px' fill='currentColor'>
+			<path d='M0 0h24v24H0V0z' fill='none' />
+			<path d='M10 17l5-5-5-5v10zM5 19h14v-2H5v2zm0-12h14V5H5v2z' />
+		</svg>
+	</button>
+	<button class='icon-btn' data-rss-read='true' data-action='rss-toggle-read' title='Mark as read'>
+		<svg xmlns='http://www.w3.org/2000/svg' height='24px' viewBox='0 0 24 24' width='24px' fill='currentColor'>
+			<path d='M0 0h24v24H0V0z' fill='none' />
+			<path d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15-5-5 1.41-1.41L11 14.17l5.59-5.59L18 10l-7 7z' />
+		</svg>
 	</button>
 	<button class='icon-btn' data-action='share' title='Share'>
 		<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="currentColor"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3s3-1.34 3-3-1.34-3-3-3z"/></svg>
@@ -3948,6 +4054,10 @@
 	// --- 配置 marked.js ---
 	const renderer = new marked.Renderer();
 	const NOTE_TRUNCATE_LENGTH = 800; // 笔记折叠的字数阈值
+	const RSS_DEFAULT_STATE = 'unread';
+	const RSS_DEFAULT_ARCHIVED = 'false';
+	const RSS_DEFAULT_SOURCE = '';
+	const RSS_LIST_LIMIT = 20;
 	const escapeHtml = (str = '') => String(str)
 		.replace(/&/g, '&amp;')
 		.replace(/</g, '&lt;')
@@ -4240,6 +4350,11 @@
 		baseMode: 'home',
 		isWaterfall: false,
 		isWide: false,
+		rss: {
+			state: RSS_DEFAULT_STATE,
+			archived: RSS_DEFAULT_ARCHIVED,
+			source: RSS_DEFAULT_SOURCE
+		},
 		filters: {
 			query: '',
 			tag: null,
@@ -4318,6 +4433,7 @@
 	const homeTabBtn = document.getElementById('home-tab-btn');
 	const favoritesTabBtn = document.getElementById('favorites-tab-btn');
 	const archiveTabBtn = document.getElementById('archive-tab-btn');
+	const rssTabBtn = document.getElementById('rss-tab-btn');
 	const waterfallTabBtn = document.getElementById('waterfall-tab-btn');
 	// const waterfallPopoverMenu = document.getElementById('waterfall-popover-menu');
 	const toggleDateGrouping = document.getElementById('toggle-date-grouping');
@@ -4362,15 +4478,24 @@
 
 	function resolveLinkPolicyForFolder(folderPath) {
 		const normalizedFolder = normalizeFolderPath(folderPath);
-		if (isFolderInSubtree(normalizedFolder, 'PARA/Archives')) {
+		if (
+			isFolderInSubtree(normalizedFolder, 'PARA/Archives')
+			|| isFolderInSubtree(normalizedFolder, '03-Archive')
+		) {
 			return LINK_POLICY_OFF;
 		}
-		if (isFolderInSubtree(normalizedFolder, 'PARA/Projects') || isFolderInSubtree(normalizedFolder, 'PARA/Areas')) {
+		if (
+			isFolderInSubtree(normalizedFolder, 'PARA/Projects')
+			|| isFolderInSubtree(normalizedFolder, 'PARA/Areas')
+			|| isFolderInSubtree(normalizedFolder, '01-Projects')
+			|| isFolderInSubtree(normalizedFolder, '02-Area')
+		) {
 			return LINK_POLICY_SOFT;
 		}
 		if (
 			normalizedFolder.toLowerCase() === 'inbox'
 			|| isFolderInSubtree(normalizedFolder, 'PARA/Resources')
+			|| isFolderInSubtree(normalizedFolder, '04-Resources')
 		) {
 			return LINK_POLICY_STRICT;
 		}
@@ -4387,6 +4512,65 @@
 
 	function shouldEnforceLinkDecisionForNote(note) {
 		return Boolean(note && note.link_status === 'pending' && resolveLinkPolicyForNote(note) === LINK_POLICY_STRICT);
+	}
+
+	function normalizeRssStateFilter(value) {
+		const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+		if (normalized === 'read' || normalized === 'unread' || normalized === 'all') {
+			return normalized;
+		}
+		return RSS_DEFAULT_STATE;
+	}
+
+	function normalizeRssArchivedFilter(value) {
+		const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+		if (normalized === 'true' || normalized === 'false' || normalized === 'all') {
+			return normalized;
+		}
+		return RSS_DEFAULT_ARCHIVED;
+	}
+
+	function syncRssFilterControls() {
+		rssStateFilter.value = normalizeRssStateFilter(appState.rss.state);
+		rssArchivedFilter.value = normalizeRssArchivedFilter(appState.rss.archived);
+		rssSourceFilterInput.value = typeof appState.rss.source === 'string' ? appState.rss.source : RSS_DEFAULT_SOURCE;
+	}
+
+	function applyRssFilterControls() {
+		appState.rss.state = normalizeRssStateFilter(rssStateFilter.value);
+		appState.rss.archived = normalizeRssArchivedFilter(rssArchivedFilter.value);
+		appState.rss.source = (rssSourceFilterInput.value || '').trim();
+	}
+
+	function resetRssFilters() {
+		appState.rss.state = RSS_DEFAULT_STATE;
+		appState.rss.archived = RSS_DEFAULT_ARCHIVED;
+		appState.rss.source = RSS_DEFAULT_SOURCE;
+		syncRssFilterControls();
+	}
+
+	function isRssMode() {
+		return appState.baseMode === 'rss';
+	}
+
+	function updateRssFilterVisibility() {
+		const visible = isRssMode();
+		rssFilterBar.style.display = visible ? 'flex' : 'none';
+	}
+
+	function parseJsonArray(value, fallback = []) {
+		if (Array.isArray(value)) {
+			return value;
+		}
+		if (typeof value === 'string') {
+			try {
+				const parsed = JSON.parse(value);
+				return Array.isArray(parsed) ? parsed : fallback;
+			} catch (_error) {
+				return fallback;
+			}
+		}
+		return fallback;
 	}
 
 		// 需要被控制显隐的左侧栏卡片
@@ -4412,6 +4596,12 @@
 	const attachmentsViewer = document.getElementById('attachments-viewer');
 	const attachmentsContent = document.getElementById('attachments-content');
 	const attachmentsTabs = document.querySelector('.attachments-tabs');
+	const rssFilterBar = document.getElementById('rss-filter-bar');
+	const rssStateFilter = document.getElementById('rss-state-filter');
+	const rssArchivedFilter = document.getElementById('rss-archived-filter');
+	const rssSourceFilterInput = document.getElementById('rss-source-filter-input');
+	const rssFilterApplyBtn = document.getElementById('rss-filter-apply-btn');
+	const rssFilterClearBtn = document.getElementById('rss-filter-clear-btn');
 
 	const moreActionsContainer = document.getElementById('more-actions-container');
 	const moreActionsBtn = document.getElementById('more-actions-btn');
@@ -4537,17 +4727,53 @@
 		const noteData = allNotesCache.find(n => n.id === parseInt(noteId, 10));
 		const favoriteBtn = notePopoverMenu.querySelector('[data-action="favorite"]');
 		const pinBtn = notePopoverMenu.querySelector('[data-action="pin"]');
-		const archiveBtn = notePopoverMenu.querySelector('[data-action="archive"], [data-action="unarchive"]');
+		const archiveBtn = notePopoverMenu.querySelector('[data-action="archive"], [data-action="unarchive"], [data-action="rss-archive"], [data-action="rss-unarchive"]');
+		const rssMoveBtn = notePopoverMenu.querySelector('[data-rss-move="true"]');
+		const rssReadBtn = notePopoverMenu.querySelector('[data-rss-read="true"]');
 		const shareBtn = notePopoverMenu.querySelector('[data-action="share"]');
 		const linkBtn = notePopoverMenu.querySelector('[data-action="link"]');
 
-		shareBtn.style.display = settings.enableSharing ? '' : 'none';
+		if (isRssMode()) {
+			const rssMeta = noteData?.rss || {};
+			const isArchivedRssItem = Boolean(rssMeta.is_archived_folder);
+			shareBtn.style.display = 'none';
+			if (linkBtn) {
+				linkBtn.style.display = 'none';
+			}
+			favoriteBtn.style.display = 'none';
+			pinBtn.style.display = 'none';
 
-		// 显示"建立关联"按钮（始终显示）
-		if (linkBtn) {
-			linkBtn.style.display = '';
-		}
-		if (appState.baseMode === 'archive') {
+			archiveBtn.style.display = '';
+			archiveBtn.classList.toggle('unarchive-mode', isArchivedRssItem);
+			archiveBtn.title = isArchivedRssItem ? 'Move out of RSS archive' : 'Move to RSS archive';
+			archiveBtn.dataset.action = isArchivedRssItem ? 'rss-unarchive' : 'rss-archive';
+
+			if (rssMoveBtn) {
+				rssMoveBtn.style.display = '';
+				rssMoveBtn.title = 'Move to 02-Area/Reading';
+				rssMoveBtn.dataset.action = 'rss-move-reading';
+			}
+
+			if (rssReadBtn) {
+				rssReadBtn.style.display = 'none';
+				rssReadBtn.dataset.action = 'rss-toggle-read';
+				rssReadBtn.title = 'Mark as read';
+			}
+		} else if (appState.baseMode === 'archive') {
+			shareBtn.style.display = settings.enableSharing ? '' : 'none';
+			if (rssMoveBtn) {
+				rssMoveBtn.style.display = 'none';
+				rssMoveBtn.dataset.action = 'rss-move-reading';
+				rssMoveBtn.title = 'Move to Reading';
+			}
+			if (rssReadBtn) {
+				rssReadBtn.style.display = 'none';
+				rssReadBtn.dataset.action = 'rss-toggle-read';
+				rssReadBtn.title = 'Mark as read';
+			}
+			if (linkBtn) {
+				linkBtn.style.display = '';
+			}
 			// 在归档视图下，只可能显示 "Unarchive"
 			archiveBtn.style.display = settings.showArchive ? '' : 'none'; // 同样要尊重设置
 			archiveBtn.classList.add('unarchive-mode');
@@ -4558,6 +4784,20 @@
 			favoriteBtn.style.display = 'none';
 			pinBtn.style.display = 'none';
 		} else {
+			shareBtn.style.display = settings.enableSharing ? '' : 'none';
+			if (rssMoveBtn) {
+				rssMoveBtn.style.display = 'none';
+				rssMoveBtn.dataset.action = 'rss-move-reading';
+				rssMoveBtn.title = 'Move to Reading';
+			}
+			if (rssReadBtn) {
+				rssReadBtn.style.display = 'none';
+				rssReadBtn.dataset.action = 'rss-toggle-read';
+				rssReadBtn.title = 'Mark as read';
+			}
+			if (linkBtn) {
+				linkBtn.style.display = '';
+			}
 			// 在常规视图下（Home, Favorites）
 			archiveBtn.style.display = settings.showArchive ? '' : 'none';
 			archiveBtn.classList.remove('unarchive-mode');
@@ -4658,6 +4898,64 @@
 				}
 				break;
 			}
+			case 'rss-mark-read':
+			case 'rss-mark-unread': {
+				const targetState = action === 'rss-mark-read' ? 'read' : 'unread';
+				actionButton.disabled = true;
+				try {
+					const res = await fetch(`/api/rss/items/${noteId}/state`, {
+						method: 'PATCH',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ state: targetState })
+					});
+					const payload = await res.json().catch(() => ({}));
+					if (!res.ok) throw new Error(payload.error || 'Failed to update RSS read state.');
+					reloadNotes();
+				} catch (error) {
+					showCustomAlert(error.message, 'error');
+				} finally {
+					actionButton.disabled = false;
+				}
+				break;
+			}
+			case 'rss-archive':
+			case 'rss-unarchive': {
+				const shouldArchive = action === 'rss-archive';
+				actionButton.disabled = true;
+				try {
+					const res = await fetch(`/api/rss/items/${noteId}/archive`, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ archive: shouldArchive })
+					});
+					const payload = await res.json().catch(() => ({}));
+					if (!res.ok) throw new Error(payload.error || 'Failed to move RSS item.');
+					reloadNotes();
+					loadAndRenderFolders();
+				} catch (error) {
+					showCustomAlert(error.message, 'error');
+				} finally {
+					actionButton.disabled = false;
+				}
+				break;
+			}
+			case 'rss-move-reading': {
+				actionButton.disabled = true;
+				try {
+					const res = await fetch(`/api/rss/items/${noteId}/move-to-reading`, {
+						method: 'POST'
+					});
+					const payload = await res.json().catch(() => ({}));
+					if (!res.ok) throw new Error(payload.error || 'Failed to move RSS item to reading.');
+					reloadNotes();
+					loadAndRenderFolders();
+				} catch (error) {
+					showCustomAlert(error.message, 'error');
+				} finally {
+					actionButton.disabled = false;
+				}
+				break;
+			}
 			case 'archive':
 			case 'unarchive': {
 				const isArchiving = action === 'archive';
@@ -4738,11 +5036,18 @@
 					if (!noteElement) return;
 					const confirmed = await showCustomConfirm('Are you sure you want to delete this note?');
 					if (!confirmed) return;
-					waterfallObserver.unobserve(noteElement);
 					try {
-						await fetch(`/api/notes/${noteId}`, { method: 'DELETE' });
-						noteElement.remove();
-						loadAndRenderTags();
+						if (isRssMode()) {
+							const res = await fetch(`/api/rss/items/${noteId}`, { method: 'DELETE' });
+							const payload = await res.json().catch(() => ({}));
+							if (!res.ok) throw new Error(payload.error || 'Failed to delete RSS item.');
+							reloadNotes();
+						} else {
+							waterfallObserver.unobserve(noteElement);
+							await fetch(`/api/notes/${noteId}`, { method: 'DELETE' });
+							noteElement.remove();
+							loadAndRenderTags();
+						}
 						loadAndRenderFolders();
 					} catch (error) {
 						showCustomAlert(error.message, 'error');
@@ -5169,6 +5474,15 @@
 		appState.baseMode = 'archive';
 		updateSidebarTabsUI();
 		updateEditorVisibility(); // 编辑器在归档页不显示
+		reloadNotes();
+	});
+
+	rssTabBtn.addEventListener('click', () => {
+		if (appState.baseMode === 'rss') return;
+		hideAttachmentsViewer();
+		appState.baseMode = 'rss';
+		updateSidebarTabsUI();
+		updateEditorVisibility();
 		reloadNotes();
 	});
 
@@ -5929,6 +6243,7 @@
 		document.querySelectorAll('.sidebar-tab-btn').forEach(btn => {
 			btn.classList.toggle('active', btn.dataset.tabName === appState.baseMode);
 		});
+		updateRssFilterVisibility();
 	}
 
 	homeTabBtn.addEventListener('click', () => {
@@ -6046,6 +6361,43 @@
 		globalSearchInput.value = '';
 		performGlobalSearch('');
 		globalSearchInput.focus();
+	});
+
+	rssStateFilter.addEventListener('change', () => {
+		applyRssFilterControls();
+		if (isRssMode()) {
+			reloadNotes();
+		}
+	});
+
+	rssArchivedFilter.addEventListener('change', () => {
+		applyRssFilterControls();
+		if (isRssMode()) {
+			reloadNotes();
+		}
+	});
+
+	rssFilterApplyBtn.addEventListener('click', () => {
+		applyRssFilterControls();
+		if (isRssMode()) {
+			reloadNotes();
+		}
+	});
+
+	rssFilterClearBtn.addEventListener('click', () => {
+		resetRssFilters();
+		if (isRssMode()) {
+			reloadNotes();
+		}
+	});
+
+	rssSourceFilterInput.addEventListener('keydown', (e) => {
+		if (e.key !== 'Enter') return;
+		e.preventDefault();
+		applyRssFilterControls();
+		if (isRssMode()) {
+			reloadNotes();
+		}
 	});
 
 	let currentEditingNoteId = null;
@@ -7341,21 +7693,23 @@
 		appContainer.style.display = 'none';
 		document.body.classList.add('auth-visible');
 	};
-		const showAppScreen = () => {
-			if (load) return;
-			load = true;
-			authContainer.style.display = 'none';
-			appContainer.style.display = 'block';
+	const showAppScreen = () => {
+		if (load) return;
+		load = true;
+		authContainer.style.display = 'none';
+		appContainer.style.display = 'block';
 			document.body.classList.remove('auth-visible');
 			document.getElementById('app-layout-container').classList.add('app-visible');
 			// 确保只有在登录成功后才执行这些操作
-			initializeCollapsibleSidebars(); // 初始化侧边栏折叠状态
-			initializeViewMode(); // 初始化宽屏模式
-			updateEditorVisibility();
-			loadAndRenderTags();
-			loadAndRenderFolders();
-			initializeSettings();
-		};
+		initializeCollapsibleSidebars(); // 初始化侧边栏折叠状态
+		initializeViewMode(); // 初始化宽屏模式
+		syncRssFilterControls();
+		updateRssFilterVisibility();
+		updateEditorVisibility();
+		loadAndRenderTags();
+		loadAndRenderFolders();
+		initializeSettings();
+	};
 
 	function showCustomAlert(message, type = 'info') {
 		customAlertMessage.textContent = message;
@@ -7723,6 +8077,68 @@
 		}
 	});
 
+	function mapRssItemsToNotes(items = []) {
+		return items.map((item) => {
+			const files = parseJsonArray(item.files, []);
+			const content = typeof item.content === 'string' && item.content.trim()
+				? item.content
+				: `# ${item.title || item.canonical_url || 'Untitled'}\n\n- Link: ${item.canonical_url || ''}\n`;
+			return {
+				id: Number(item.note_id),
+				content,
+				files,
+				is_pinned: Number(item.is_pinned || 0),
+				is_favorited: Number(item.is_favorited || 0),
+				is_archived: Number(item.is_archived || 0),
+				created_at: Number(item.created_at || item.first_seen_at || item.note_updated_at || Date.now()),
+				updated_at: Number(item.note_updated_at || item.last_seen_at || Date.now()),
+				folder: normalizeFolderPath(item.folder || 'Inbox'),
+				link_status: item.link_status || 'orphan',
+				rss: {
+					mapping_id: item.id,
+					source: item.source || '',
+					canonical_url: item.canonical_url || '',
+					read_state: normalizeRssStateFilter(item.read_state),
+					read_at: item.read_at ?? null,
+					lifecycle_state: typeof item.lifecycle_state === 'string' ? item.lifecycle_state.toLowerCase() : 'inbox',
+					first_seen_at: item.first_seen_at || null,
+					last_seen_at: item.last_seen_at || null,
+					is_archived_folder: Boolean(item.is_archived_folder)
+				}
+			};
+		});
+	}
+
+	async function fetchRssItemsPage(page) {
+		const url = new URL(window.location.origin + '/api/rss/items');
+		url.searchParams.set('page', String(page));
+		url.searchParams.set('limit', String(RSS_LIST_LIMIT));
+		url.searchParams.set('state', normalizeRssStateFilter(appState.rss.state));
+		url.searchParams.set('archived', normalizeRssArchivedFilter(appState.rss.archived));
+		if (appState.rss.source) {
+			url.searchParams.set('source', appState.rss.source);
+		}
+		const response = await fetch(url.toString());
+		if (response.status === 401) {
+			showLoginScreen();
+			return { unauthorized: true };
+		}
+		if (!response.ok) {
+			let payload = {};
+			try { payload = await response.json(); } catch (_error) { payload = {}; }
+			throw new Error(payload.error || `HTTP error! Status: ${response.status}`);
+		}
+		const payload = await response.json();
+		const normalizedFilters = payload.filters || {};
+		appState.rss.state = normalizeRssStateFilter(normalizedFilters.state || appState.rss.state);
+		appState.rss.archived = normalizeRssArchivedFilter(normalizedFilters.archived || appState.rss.archived);
+		appState.rss.source = typeof normalizedFilters.source === 'string'
+			? normalizedFilters.source
+			: (appState.rss.source || '');
+		syncRssFilterControls();
+		return payload;
+	}
+
 	async function fetchNotes(page = 1) {
 		if (appState.pagination.isLoading) return;
 		appState.pagination.isLoading = true;
@@ -7733,6 +8149,36 @@
 		}
 		currentLoader.style.display = isAppending ? 'block' : 'flex';
 		try {
+			if (isRssMode()) {
+				const data = await fetchRssItemsPage(page);
+				if (data.unauthorized) {
+					return;
+				}
+				showAppScreen();
+				const rssNotes = mapRssItemsToNotes(data.items || []);
+				if (!isAppending) {
+					allNotesCache = [];
+					notesContainer.innerHTML = '';
+				}
+				allNotesCache.push(...rssNotes);
+				renderNotes(rssNotes);
+				appState.pagination.hasMore = Boolean(data.hasMore);
+				appState.pagination.currentPage = page;
+
+				if (appState.pagination.hasMore) {
+					scrollLoader.style.display = 'none';
+				} else {
+					if (allNotesCache.length > 0) {
+						scrollLoader.textContent = 'No more notes.';
+						scrollLoader.style.display = 'block';
+					} else {
+						notesContainer.innerHTML = '<div style="text-align: center; color: var(--text-secondary); padding: 1rem 0;">No RSS items matched current filters.</div>';
+						scrollLoader.style.display = 'none';
+					}
+				}
+				return;
+			}
+
 			const url = new URL(window.location.origin + '/api/notes');
 			// 1. 添加分页
 			url.searchParams.set('page', page);
@@ -7820,6 +8266,13 @@
 
 		const noteElement = document.createElement('div');
 		noteElement.className = 'note';
+		const rssMeta = note && typeof note.rss === 'object' ? note.rss : null;
+		if (rssMeta) {
+			noteElement.classList.add('rss-note');
+			if (normalizeRssStateFilter(rssMeta.read_state) === 'unread') {
+				noteElement.classList.add('rss-unread');
+			}
+		}
 		if (shouldEnforceLinkDecisionForNote(note)) {
 			noteElement.classList.add('note-status-pending');
 		}
@@ -7831,6 +8284,13 @@
 		noteElement.dataset.id = noteId;
 		const time = formatTimestamp(note.updated_at);
 		const folderName = normalizeFolderPath(note.folder);
+		const rssSourceHtml = rssMeta?.source
+			? `<span class='note-rss-source' title='RSS source'>${escapeHtml(rssMeta.source)}</span>`
+			: '';
+		const rssStateRaw = rssMeta ? normalizeRssStateFilter(rssMeta.read_state) : '';
+		const rssStateHtml = rssMeta
+			? `<span class='note-rss-state state-${rssStateRaw}' title='Read state'>${rssStateRaw === 'read' ? 'Read' : 'Unread'}</span>`
+			: '';
 		let editedIndicatorHtml = '';
 		// if (note.updated_at !== note.created_at) {
 		// 	const editedTime = formatTimestamp(note.updated_at);
@@ -7894,6 +8354,8 @@
 									<div class='note-meta'> ${index}
 										<span title='${time.absolute}'>${time.relative}</span>
 										<span class='note-folder-badge' title='Folder'>${escapeHtml(folderName)}</span>
+										${rssSourceHtml}
+										${rssStateHtml}
 										${editedIndicatorHtml}
 									</div>
 											<div class='note-actions view-mode'>
@@ -8370,6 +8832,11 @@
 	});
 
 		const refreshNotes = () => {
+			if (isRssMode()) {
+				reloadNotes();
+				loadAndRenderFolders();
+				return;
+			}
 			appState.filters.query = '';
 			appState.filters.tag = null;
 			appState.filters.folder = null;

@@ -2,8 +2,20 @@ const NOTES_PER_PAGE = 10;
 const SESSION_DURATION_SECONDS = 30*86400; // Session 有效期: 30 天
 const SESSION_COOKIE = '__session';
 const DEFAULT_FOLDER_NAME = 'Inbox';
-const RSS_DEFAULT_FOLDER_ROOT = 'PARA/Areas/Reading/RSS';
+const RSS_DEFAULT_FOLDER_ROOT = 'RSS';
+const RSS_ARCHIVE_FOLDER_ROOT = `${RSS_DEFAULT_FOLDER_ROOT}/Archive`;
+const RSS_READING_FOLDER = '02-Area/Reading';
+const RSS_LEGACY_FOLDER_ROOT = '02-Area/Reading/RSS';
+const RSS_LEGACY_ARCHIVE_FOLDER_ROOT = `${RSS_LEGACY_FOLDER_ROOT}/Archive`;
 const RSS_INGEST_MAX_ITEMS = 50;
+const RSS_LIST_DEFAULT_LIMIT = 50;
+const RSS_LIST_MAX_LIMIT = 200;
+const RSS_READ_STATE_UNREAD = 'unread';
+const RSS_READ_STATE_READ = 'read';
+const RSS_LIFECYCLE_INBOX = 'inbox';
+const RSS_LIFECYCLE_READING = 'reading';
+const RSS_LIFECYCLE_ARCHIVED = 'archived';
+const RSS_LIFECYCLE_DELETED = 'deleted';
 const LINK_POLICY_STRICT = 'strict';
 const LINK_POLICY_SOFT = 'soft';
 const LINK_POLICY_OFF = 'off';
@@ -35,15 +47,25 @@ function normalizeNoteFolder(note) {
 
 function resolveLinkPolicy(folderPath) {
 	const normalizedFolder = normalizeFolderName(folderPath);
-	if (isFolderInSubtree(normalizedFolder, 'PARA/Archives')) {
+	if (
+		isFolderInSubtree(normalizedFolder, 'PARA/Archives')
+		|| isFolderInSubtree(normalizedFolder, '03-Archive')
+	) {
 		return LINK_POLICY_OFF;
 	}
-	if (isFolderInSubtree(normalizedFolder, 'PARA/Projects') || isFolderInSubtree(normalizedFolder, 'PARA/Areas')) {
+	if (
+		isFolderInSubtree(normalizedFolder, 'PARA/Projects')
+		|| isFolderInSubtree(normalizedFolder, 'PARA/Areas')
+		|| isFolderInSubtree(normalizedFolder, '01-Projects')
+		|| isFolderInSubtree(normalizedFolder, '02-Area')
+		|| isFolderInSubtree(normalizedFolder, RSS_DEFAULT_FOLDER_ROOT)
+	) {
 		return LINK_POLICY_SOFT;
 	}
 	if (
 		normalizedFolder.toLowerCase() === DEFAULT_FOLDER_NAME.toLowerCase()
 		|| isFolderInSubtree(normalizedFolder, 'PARA/Resources')
+		|| isFolderInSubtree(normalizedFolder, '04-Resources')
 	) {
 		return LINK_POLICY_STRICT;
 	}
@@ -288,40 +310,85 @@ function normalizeRssSummary(value) {
 	return normalized.slice(0, 12000);
 }
 
-function normalizeRssTagToken(value) {
-	const raw = typeof value === 'string' ? value : (value ?? '').toString();
-	const normalized = raw
-		.trim()
-		.toLowerCase()
-		.replace(/[^\p{L}\p{N}_-]+/gu, '-')
-		.replace(/-+/g, '-')
-		.replace(/^[-_]+|[-_]+$/g, '');
-	return normalized.slice(0, 64);
-}
-
-function normalizeRssTags(value) {
-	if (Array.isArray(value)) {
-		return value.map(item => normalizeRssTagToken(item)).filter(Boolean);
-	}
-	if (typeof value === 'string') {
-		return value
-			.split(/[,\s]+/)
-			.map(item => normalizeRssTagToken(item))
-			.filter(Boolean);
-	}
-	return [];
-}
-
 function buildDefaultRssFolderPath(source, folderOverride) {
 	const customFolder = typeof folderOverride === 'string' ? folderOverride.trim() : '';
 	if (customFolder) {
-		return normalizeFolderName(customFolder);
+		const normalizedCustomFolder = normalizeFolderName(customFolder);
+		if (isFolderInSubtree(normalizedCustomFolder, RSS_DEFAULT_FOLDER_ROOT)) {
+			return normalizedCustomFolder;
+		}
 	}
 	const feedSegment = sanitizeRssFolderSegment(source, 'feed');
 	return normalizeFolderName(`${RSS_DEFAULT_FOLDER_ROOT}/${feedSegment}`);
 }
 
-function buildRssTemplateContent({ title, source, canonicalUrl, publishedAt, summary, tags }) {
+function buildRssArchiveFolderPath(source) {
+	const feedSegment = sanitizeRssFolderSegment(source, 'feed');
+	return normalizeFolderName(`${RSS_ARCHIVE_FOLDER_ROOT}/${feedSegment}`);
+}
+
+function buildRssReadingFolderPath() {
+	return normalizeFolderName(RSS_READING_FOLDER);
+}
+
+function normalizeRssReadState(value) {
+	const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+	return normalized === RSS_READ_STATE_READ ? RSS_READ_STATE_READ : RSS_READ_STATE_UNREAD;
+}
+
+function parseRssReadState(value) {
+	const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+	if (normalized === RSS_READ_STATE_UNREAD || normalized === RSS_READ_STATE_READ) {
+		return normalized;
+	}
+	return null;
+}
+
+function normalizeRssLifecycleState(value) {
+	const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+	if (normalized === RSS_LIFECYCLE_READING) {
+		return RSS_LIFECYCLE_READING;
+	}
+	if (normalized === RSS_LIFECYCLE_ARCHIVED) {
+		return RSS_LIFECYCLE_ARCHIVED;
+	}
+	if (normalized === RSS_LIFECYCLE_DELETED) {
+		return RSS_LIFECYCLE_DELETED;
+	}
+	return RSS_LIFECYCLE_INBOX;
+}
+
+function normalizeRssArchivedFilter(value) {
+	const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+	if (normalized === 'true' || normalized === 'false' || normalized === 'all') {
+		return normalized;
+	}
+	return 'false';
+}
+
+function parsePositiveInteger(value, fallback, maxValue = 200) {
+	const parsed = Number.parseInt(String(value ?? ''), 10);
+	if (!Number.isFinite(parsed) || parsed <= 0) {
+		return fallback;
+	}
+	return Math.min(parsed, maxValue);
+}
+
+function extractRssTitleFromContent(content, fallback = '') {
+	if (typeof content !== 'string') {
+		return fallback;
+	}
+	const firstHeadingLine = content
+		.split('\n')
+		.map(line => line.trim())
+		.find(line => line.startsWith('# '));
+	if (!firstHeadingLine) {
+		return fallback;
+	}
+	return firstHeadingLine.replace(/^#\s+/, '').trim() || fallback;
+}
+
+function buildRssTemplateContent({ title, source, canonicalUrl, publishedAt, summary }) {
 	const lines = [];
 	lines.push(`# ${title}`);
 	lines.push('');
@@ -335,7 +402,6 @@ function buildRssTemplateContent({ title, source, canonicalUrl, publishedAt, sum
 		lines.push(summary);
 		lines.push('');
 	}
-	lines.push(tags.join(' '));
 	return `${lines.join('\n')}\n`;
 }
 
@@ -359,20 +425,12 @@ function normalizeRssIngestItem(rawItem) {
 	const summary = normalizeRssSummary(rawItem.summary ?? rawItem.excerpt ?? rawItem.description ?? '');
 	const title = normalizeRssTitle(rawItem.title, canonicalUrl);
 	const folder = buildDefaultRssFolderPath(source, rawItem.folder);
-	const feedTag = normalizeRssTagToken(sanitizeRssFolderSegment(source, 'feed'));
-	const customTags = normalizeRssTags(rawItem.tags);
-	const tagTokens = ['rss', 'blog', feedTag, ...customTags]
-		.map(tag => normalizeRssTagToken(tag))
-		.filter(Boolean);
-	const uniqueTagTokens = [...new Set(tagTokens)];
-	const tags = uniqueTagTokens.map(tag => `#${tag}`);
 	const content = buildRssTemplateContent({
 		title,
 		source,
 		canonicalUrl,
 		publishedAt,
-		summary,
-		tags
+		summary
 	});
 
 	return {
@@ -385,7 +443,6 @@ function normalizeRssIngestItem(rawItem) {
 			title,
 			summary,
 			folder,
-			tags,
 			content
 		}
 	};
@@ -466,19 +523,97 @@ async function ensureRssIngestSchema(db) {
 	}
 	if (!rssIngestSchemaInitPromise) {
 		rssIngestSchemaInitPromise = (async () => {
+				await db.prepare(`
+					CREATE TABLE IF NOT EXISTS rss_ingest_items (
+						id INTEGER PRIMARY KEY AUTOINCREMENT,
+						source TEXT NOT NULL,
+						external_id TEXT,
+						canonical_url TEXT NOT NULL,
+						content_hash TEXT NOT NULL,
+						note_id INTEGER NOT NULL,
+						first_seen_at INTEGER NOT NULL,
+						last_seen_at INTEGER NOT NULL,
+						read_state TEXT DEFAULT 'unread' NOT NULL,
+						read_at INTEGER,
+						lifecycle_state TEXT DEFAULT 'inbox' NOT NULL,
+						FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+					)
+				`).run();
+			try {
+				await db.prepare("ALTER TABLE rss_ingest_items ADD COLUMN read_state TEXT DEFAULT 'unread' NOT NULL").run();
+			} catch (e) {
+				if (!isDuplicateColumnError(e, 'read_state')) {
+					throw e;
+				}
+			}
+			try {
+				await db.prepare("ALTER TABLE rss_ingest_items ADD COLUMN read_at INTEGER").run();
+			} catch (e) {
+				if (!isDuplicateColumnError(e, 'read_at')) {
+					throw e;
+				}
+			}
+			try {
+				await db.prepare("ALTER TABLE rss_ingest_items ADD COLUMN lifecycle_state TEXT DEFAULT 'inbox' NOT NULL").run();
+			} catch (e) {
+				if (!isDuplicateColumnError(e, 'lifecycle_state')) {
+					throw e;
+				}
+			}
+			await db.prepare("UPDATE rss_ingest_items SET read_state = ? WHERE read_state IS NULL OR TRIM(read_state) = ''")
+				.bind(RSS_READ_STATE_UNREAD)
+				.run();
+			await db.prepare("UPDATE rss_ingest_items SET lifecycle_state = ? WHERE lifecycle_state IS NULL OR TRIM(lifecycle_state) = ''")
+				.bind(RSS_LIFECYCLE_INBOX)
+				.run();
 			await db.prepare(`
-				CREATE TABLE IF NOT EXISTS rss_ingest_items (
-					id INTEGER PRIMARY KEY AUTOINCREMENT,
-					source TEXT NOT NULL,
-					external_id TEXT,
-					canonical_url TEXT NOT NULL,
-					content_hash TEXT NOT NULL,
-					note_id INTEGER NOT NULL,
-					first_seen_at INTEGER NOT NULL,
-					last_seen_at INTEGER NOT NULL,
-					FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+				UPDATE rss_ingest_items
+				SET lifecycle_state = CASE LOWER(TRIM(lifecycle_state))
+					WHEN ? THEN ?
+					WHEN ? THEN ?
+					WHEN ? THEN ?
+					ELSE ?
+				END
+			`).bind(
+				RSS_LIFECYCLE_READING, RSS_LIFECYCLE_READING,
+				RSS_LIFECYCLE_ARCHIVED, RSS_LIFECYCLE_ARCHIVED,
+				RSS_LIFECYCLE_DELETED, RSS_LIFECYCLE_DELETED,
+				RSS_LIFECYCLE_INBOX
+			).run();
+			await db.prepare(`
+				UPDATE rss_ingest_items
+				SET lifecycle_state = ?
+				WHERE note_id IN (
+					SELECT n.id
+					FROM notes n
+					WHERE (
+						LOWER(COALESCE(NULLIF(TRIM(n.folder), ''), ?)) = LOWER(?)
+						OR LOWER(COALESCE(NULLIF(TRIM(n.folder), ''), ?)) LIKE LOWER(?)
+						OR LOWER(COALESCE(NULLIF(TRIM(n.folder), ''), ?)) = LOWER(?)
+						OR LOWER(COALESCE(NULLIF(TRIM(n.folder), ''), ?)) LIKE LOWER(?)
+					)
 				)
-			`).run();
+			`).bind(
+				RSS_LIFECYCLE_ARCHIVED,
+				DEFAULT_FOLDER_NAME, RSS_ARCHIVE_FOLDER_ROOT,
+				DEFAULT_FOLDER_NAME, `${RSS_ARCHIVE_FOLDER_ROOT}/%`,
+				DEFAULT_FOLDER_NAME, RSS_LEGACY_ARCHIVE_FOLDER_ROOT,
+				DEFAULT_FOLDER_NAME, `${RSS_LEGACY_ARCHIVE_FOLDER_ROOT}/%`
+			).run();
+			await db.prepare(`
+				UPDATE rss_ingest_items
+				SET lifecycle_state = ?
+				WHERE note_id IN (
+					SELECT n.id
+					FROM notes n
+					WHERE LOWER(COALESCE(NULLIF(TRIM(n.folder), ''), ?)) = LOWER(?)
+				)
+				AND lifecycle_state = ?
+			`).bind(
+				RSS_LIFECYCLE_READING,
+				DEFAULT_FOLDER_NAME, buildRssReadingFolderPath(),
+				RSS_LIFECYCLE_INBOX
+			).run();
 			await db.prepare(`
 				CREATE UNIQUE INDEX IF NOT EXISTS idx_rss_ingest_source_external_unique
 				ON rss_ingest_items(source, external_id)
@@ -487,6 +622,8 @@ async function ensureRssIngestSchema(db) {
 			await db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_rss_ingest_canonical_url_unique ON rss_ingest_items(canonical_url)").run();
 			await db.prepare("CREATE INDEX IF NOT EXISTS idx_rss_ingest_note_id ON rss_ingest_items(note_id)").run();
 			await db.prepare("CREATE INDEX IF NOT EXISTS idx_rss_ingest_last_seen_at ON rss_ingest_items(last_seen_at DESC)").run();
+			await db.prepare("CREATE INDEX IF NOT EXISTS idx_rss_ingest_read_state ON rss_ingest_items(read_state)").run();
+			await db.prepare("CREATE INDEX IF NOT EXISTS idx_rss_ingest_lifecycle_state ON rss_ingest_items(lifecycle_state)").run();
 			rssIngestSchemaReady = true;
 		})().catch((e) => {
 			rssIngestSchemaInitPromise = null;
@@ -499,7 +636,7 @@ async function ensureRssIngestSchema(db) {
 async function findRssIngestItem(db, source, externalId, canonicalUrl) {
 	if (externalId) {
 		const byExternalId = await db.prepare(`
-			SELECT id, source, external_id, canonical_url, content_hash, note_id, first_seen_at, last_seen_at
+			SELECT id, source, external_id, canonical_url, content_hash, note_id, first_seen_at, last_seen_at, read_state, read_at, lifecycle_state
 			FROM rss_ingest_items
 			WHERE source = ? AND external_id = ?
 			LIMIT 1
@@ -509,12 +646,16 @@ async function findRssIngestItem(db, source, externalId, canonicalUrl) {
 		}
 	}
 	const byCanonicalUrl = await db.prepare(`
-		SELECT id, source, external_id, canonical_url, content_hash, note_id, first_seen_at, last_seen_at
+		SELECT id, source, external_id, canonical_url, content_hash, note_id, first_seen_at, last_seen_at, read_state, read_at, lifecycle_state
 		FROM rss_ingest_items
 		WHERE canonical_url = ?
 		LIMIT 1
 	`).bind(canonicalUrl).first();
 	return byCanonicalUrl || null;
+}
+
+async function clearNoteTags(db, noteId) {
+	await db.prepare("DELETE FROM note_tags WHERE note_id = ?").bind(noteId).run();
 }
 
 async function createRssImportedNote(db, folderName, content, now) {
@@ -528,7 +669,7 @@ async function createRssImportedNote(db, folderName, content, now) {
 	if (!noteId) {
 		throw new Error('Failed to create note for RSS item.');
 	}
-	await processNoteTags(db, noteId, content);
+	await clearNoteTags(db, noteId);
 	return noteId;
 }
 
@@ -543,8 +684,392 @@ async function updateRssImportedNote(db, noteId, folderName, content, now) {
 	await db.prepare(
 		"UPDATE notes SET content = ?, updated_at = ?, pics = ?, folder = ?, link_status = ? WHERE id = ?"
 	).bind(content, now, picUrls, folderName, nextLinkStatus, noteId).run();
-	await processNoteTags(db, noteId, content);
+	await clearNoteTags(db, noteId);
 	return noteId;
+}
+
+function getConfiguredRssIngestToken(env) {
+	return typeof env.RSS_INGEST_TOKEN === 'string' ? env.RSS_INGEST_TOKEN.trim() : '';
+}
+
+function validateRssApiToken(env, incomingToken) {
+	const configuredToken = getConfiguredRssIngestToken(env);
+	if (!configuredToken) {
+		return {
+			ok: false,
+			status: 503,
+			error: 'RSS ingest token is not configured on worker side.'
+		};
+	}
+	if (!incomingToken || !constantTimeEquals(incomingToken, configuredToken)) {
+		return { ok: false, status: 401, error: 'Unauthorized' };
+	}
+	return { ok: true, status: 200, error: '' };
+}
+
+function matchRssItemsRoute(method, pathname) {
+	if (method === 'GET' && pathname === '/api/rss/items') {
+		return { action: 'list' };
+	}
+	const stateMatch = pathname.match(/^\/api\/rss\/items\/(\d+)\/state$/);
+	if (stateMatch && method === 'PATCH') {
+		return { action: 'state', noteId: stateMatch[1] };
+	}
+	const archiveMatch = pathname.match(/^\/api\/rss\/items\/(\d+)\/archive$/);
+	if (archiveMatch && method === 'POST') {
+		return { action: 'archive', noteId: archiveMatch[1] };
+	}
+	const moveReadingMatch = pathname.match(/^\/api\/rss\/items\/(\d+)\/move-to-reading$/);
+	if (moveReadingMatch && method === 'POST') {
+		return { action: 'moveToReading', noteId: moveReadingMatch[1] };
+	}
+	const deleteMatch = pathname.match(/^\/api\/rss\/items\/(\d+)$/);
+	if (deleteMatch && method === 'DELETE') {
+		return { action: 'delete', noteId: deleteMatch[1] };
+	}
+	return null;
+}
+
+function appendRssLifecycleFilter(whereClauses, bindings, archivedFilter) {
+	if (archivedFilter === 'true') {
+		whereClauses.push("r.lifecycle_state = ?");
+		bindings.push(RSS_LIFECYCLE_ARCHIVED);
+		return;
+	}
+	if (archivedFilter === 'false') {
+		whereClauses.push("r.lifecycle_state = ?");
+		bindings.push(RSS_LIFECYCLE_INBOX);
+		return;
+	}
+	whereClauses.push("(r.lifecycle_state = ? OR r.lifecycle_state = ?)");
+	bindings.push(RSS_LIFECYCLE_INBOX, RSS_LIFECYCLE_ARCHIVED);
+}
+
+async function handleRssItemsList(request, env) {
+	const db = env.DB;
+	await ensureFolderSchema(db);
+	await ensureRssIngestSchema(db);
+
+	const url = new URL(request.url);
+	const source = normalizeRssSource(url.searchParams.get('source'));
+	const stateRaw = url.searchParams.get('state');
+	const normalizedStateRaw = typeof stateRaw === 'string' ? stateRaw.trim().toLowerCase() : '';
+	let normalizedState = RSS_READ_STATE_UNREAD;
+	if (normalizedStateRaw === 'all') {
+		normalizedState = null;
+	} else if (stateRaw !== null) {
+		const parsedState = parseRssReadState(stateRaw);
+		if (!parsedState) {
+			return jsonResponse({ error: 'state must be one of unread, read, all.' }, 400);
+		}
+		normalizedState = parsedState;
+	}
+	const archivedFilter = normalizeRssArchivedFilter(url.searchParams.get('archived'));
+	const page = parsePositiveInteger(url.searchParams.get('page'), 1, 1_000_000);
+	const limit = parsePositiveInteger(url.searchParams.get('limit'), RSS_LIST_DEFAULT_LIMIT, RSS_LIST_MAX_LIMIT);
+	const offset = (page - 1) * limit;
+
+	const whereClauses = [];
+	const bindings = [];
+	if (source) {
+		whereClauses.push("r.source = ?");
+		bindings.push(source);
+	}
+	if (normalizedState) {
+		whereClauses.push("r.read_state = ?");
+		bindings.push(normalizedState);
+	}
+	appendRssLifecycleFilter(whereClauses, bindings, archivedFilter);
+	const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+	const stmt = db.prepare(`
+		SELECT
+			r.id,
+			r.source,
+			r.external_id,
+			r.canonical_url,
+			r.content_hash,
+			r.note_id,
+			r.first_seen_at,
+			r.last_seen_at,
+			r.read_state,
+			r.read_at,
+			r.lifecycle_state,
+			n.folder,
+			n.files,
+			n.created_at,
+			n.updated_at AS note_updated_at,
+			n.content,
+			n.is_pinned,
+			n.is_favorited,
+			n.is_archived,
+			n.link_status
+		FROM rss_ingest_items r
+		JOIN notes n ON n.id = r.note_id
+		${whereClause}
+		ORDER BY r.last_seen_at DESC, r.id DESC
+		LIMIT ? OFFSET ?
+	`);
+	const { results } = await stmt.bind(...bindings, limit + 1, offset).all();
+	const rows = results || [];
+	const hasMore = rows.length > limit;
+	const items = rows.slice(0, limit).map((row) => {
+		const folder = normalizeFolderName(row.folder);
+			return {
+				id: row.id,
+				source: row.source,
+				external_id: row.external_id,
+				canonical_url: row.canonical_url,
+				note_id: row.note_id,
+				content_hash: row.content_hash,
+				first_seen_at: row.first_seen_at,
+				last_seen_at: row.last_seen_at,
+				read_state: normalizeRssReadState(row.read_state),
+				read_at: row.read_at ?? null,
+				lifecycle_state: normalizeRssLifecycleState(row.lifecycle_state),
+				folder,
+				files: row.files ?? '[]',
+				created_at: row.created_at ?? null,
+				content: row.content ?? '',
+				is_pinned: row.is_pinned ?? 0,
+				is_favorited: row.is_favorited ?? 0,
+				is_archived: row.is_archived ?? 0,
+				link_status: row.link_status ?? 'orphan',
+				is_archived_folder: normalizeRssLifecycleState(row.lifecycle_state) === RSS_LIFECYCLE_ARCHIVED,
+				note_updated_at: row.note_updated_at,
+				title: extractRssTitleFromContent(row.content, row.canonical_url)
+			};
+	});
+
+	return jsonResponse({
+		items,
+		hasMore,
+		page,
+		limit,
+		filters: {
+			source: source || null,
+			state: normalizedState || 'all',
+			archived: archivedFilter
+		}
+	});
+}
+
+async function handleRssItemStateUpdate(request, noteId, env) {
+	const id = Number.parseInt(String(noteId), 10);
+	if (!Number.isFinite(id)) {
+		return jsonResponse({ error: 'Invalid note id.' }, 400);
+	}
+
+	const parsed = await parseJsonBody(request);
+	if (!parsed.ok || !parsed.data || typeof parsed.data !== 'object') {
+		return jsonResponse({ error: 'Invalid JSON body.' }, 400);
+	}
+	const desiredState = parseRssReadState(parsed.data.state ?? parsed.data.read_state);
+	if (!desiredState) {
+		return jsonResponse({ error: 'state must be either read or unread.' }, 400);
+	}
+
+	const db = env.DB;
+	await ensureRssIngestSchema(db);
+	const existing = await db.prepare(`
+		SELECT note_id, read_state, read_at
+		FROM rss_ingest_items
+		WHERE note_id = ?
+		LIMIT 1
+	`).bind(id).first();
+	if (!existing) {
+		return jsonResponse({ error: 'RSS item not found for this note.' }, 404);
+	}
+
+	const now = Date.now();
+	const currentReadAt = existing.read_at === null || existing.read_at === undefined
+		? null
+		: Number(existing.read_at);
+	const nextReadAt = desiredState === RSS_READ_STATE_READ
+		? (currentReadAt || now)
+		: null;
+	await db.prepare(`
+		UPDATE rss_ingest_items
+		SET read_state = ?, read_at = ?
+		WHERE note_id = ?
+	`).bind(desiredState, nextReadAt, id).run();
+
+	return jsonResponse({
+		success: true,
+		note_id: id,
+		read_state: desiredState,
+		read_at: nextReadAt
+	});
+}
+
+async function handleRssItemArchive(request, noteId, env) {
+	const id = Number.parseInt(String(noteId), 10);
+	if (!Number.isFinite(id)) {
+		return jsonResponse({ error: 'Invalid note id.' }, 400);
+	}
+
+	let archive = true;
+	const contentType = (request.headers.get('Content-Type') || '').toLowerCase();
+	if (contentType.includes('application/json')) {
+		const parsed = await parseJsonBody(request);
+		if (!parsed.ok) {
+			return jsonResponse({ error: 'Invalid JSON body.' }, 400);
+		}
+		if (parsed.data && typeof parsed.data === 'object' && Object.prototype.hasOwnProperty.call(parsed.data, 'archive')) {
+			archive = Boolean(parsed.data.archive);
+		}
+	}
+
+	const db = env.DB;
+	await ensureFolderSchema(db);
+	await ensureRssIngestSchema(db);
+	const existing = await db.prepare(`
+		SELECT
+			r.note_id,
+			r.source,
+			r.read_state,
+			r.read_at,
+			n.folder,
+			n.link_status
+		FROM rss_ingest_items r
+		JOIN notes n ON n.id = r.note_id
+		WHERE r.note_id = ?
+		LIMIT 1
+	`).bind(id).first();
+	if (!existing) {
+		return jsonResponse({ error: 'RSS item not found for this note.' }, 404);
+	}
+
+	const nextFolder = archive
+		? buildRssArchiveFolderPath(existing.source)
+		: buildDefaultRssFolderPath(existing.source);
+	const nextLifecycle = archive ? RSS_LIFECYCLE_ARCHIVED : RSS_LIFECYCLE_INBOX;
+	await ensureFolderPathExists(db, nextFolder);
+	const nextLinkStatus = await resolveLinkStatusForFolder(db, id, existing.link_status, nextFolder);
+	await db.prepare("UPDATE notes SET folder = ?, link_status = ? WHERE id = ?")
+		.bind(nextFolder, nextLinkStatus, id)
+		.run();
+
+	let nextReadState = normalizeRssReadState(existing.read_state);
+	let nextReadAt = existing.read_at === null || existing.read_at === undefined
+		? null
+		: Number(existing.read_at);
+	if (archive) {
+		nextReadState = RSS_READ_STATE_READ;
+		nextReadAt = nextReadAt || Date.now();
+	}
+	await db.prepare(`
+		UPDATE rss_ingest_items
+		SET read_state = ?, read_at = ?, lifecycle_state = ?
+		WHERE note_id = ?
+	`).bind(nextReadState, nextReadAt, nextLifecycle, id).run();
+
+	return jsonResponse({
+		success: true,
+		note_id: id,
+		archived: archive,
+		folder: nextFolder,
+		lifecycle_state: nextLifecycle,
+		read_state: nextReadState,
+		read_at: nextReadAt
+	});
+}
+
+async function handleRssItemMoveToReading(_request, noteId, env) {
+	const id = Number.parseInt(String(noteId), 10);
+	if (!Number.isFinite(id)) {
+		return jsonResponse({ error: 'Invalid note id.' }, 400);
+	}
+
+	const db = env.DB;
+	await ensureFolderSchema(db);
+	await ensureRssIngestSchema(db);
+	const existing = await db.prepare(`
+		SELECT
+			r.note_id,
+			r.read_at,
+			n.link_status
+		FROM rss_ingest_items r
+		JOIN notes n ON n.id = r.note_id
+		WHERE r.note_id = ?
+		LIMIT 1
+	`).bind(id).first();
+	if (!existing) {
+		return jsonResponse({ error: 'RSS item not found for this note.' }, 404);
+	}
+
+	const nextFolder = buildRssReadingFolderPath();
+	await ensureFolderPathExists(db, nextFolder);
+	const nextLinkStatus = await resolveLinkStatusForFolder(db, id, existing.link_status, nextFolder);
+	await db.prepare("UPDATE notes SET folder = ?, link_status = ? WHERE id = ?")
+		.bind(nextFolder, nextLinkStatus, id)
+		.run();
+
+	const nextReadAt = existing.read_at === null || existing.read_at === undefined
+		? Date.now()
+		: Number(existing.read_at);
+	await db.prepare(`
+		UPDATE rss_ingest_items
+		SET lifecycle_state = ?, read_state = ?, read_at = ?
+		WHERE note_id = ?
+	`).bind(RSS_LIFECYCLE_READING, RSS_READ_STATE_READ, nextReadAt, id).run();
+
+	return jsonResponse({
+		success: true,
+		note_id: id,
+		folder: nextFolder,
+		lifecycle_state: RSS_LIFECYCLE_READING,
+		read_state: RSS_READ_STATE_READ,
+		read_at: nextReadAt
+	});
+}
+
+async function handleRssItemDelete(request, noteId, env) {
+	const id = Number.parseInt(String(noteId), 10);
+	if (!Number.isFinite(id)) {
+		return jsonResponse({ error: 'Invalid note id.' }, 400);
+	}
+
+	const db = env.DB;
+	await ensureRssIngestSchema(db);
+	const existing = await db.prepare(`
+		SELECT r.note_id, n.id AS note_exists
+		FROM rss_ingest_items r
+		LEFT JOIN notes n ON n.id = r.note_id
+		WHERE r.note_id = ?
+		LIMIT 1
+	`).bind(id).first();
+	if (!existing) {
+		return jsonResponse({ error: 'RSS item not found for this note.' }, 404);
+	}
+
+	if (!existing.note_exists) {
+		await db.prepare("DELETE FROM rss_ingest_items WHERE note_id = ?").bind(id).run();
+		return jsonResponse({ success: true, note_id: id, deleted: false, cleaned_mapping: true });
+	}
+
+	const response = await handleNoteDetail(request, String(id), env);
+	if (response.status === 204) {
+		return jsonResponse({ success: true, note_id: id, deleted: true });
+	}
+	return response;
+}
+
+async function handleRssItemsRoute(route, request, env) {
+	switch (route.action) {
+		case 'list':
+			return handleRssItemsList(request, env);
+		case 'state':
+			return handleRssItemStateUpdate(request, route.noteId, env);
+		case 'archive':
+			return handleRssItemArchive(request, route.noteId, env);
+		case 'moveToReading':
+			return handleRssItemMoveToReading(request, route.noteId, env);
+		case 'delete':
+			return handleRssItemDelete(request, route.noteId, env);
+		default:
+			return jsonResponse({ error: 'Not Found' }, 404);
+	}
 }
 
 export default {
@@ -558,6 +1083,7 @@ export default {
  */
 async function handleApiRequest(request, env) {
 	const { pathname } = new URL(request.url);
+	const rssItemsRoute = matchRssItemsRoute(request.method, pathname);
 
 	// --- Memos 分享公开路由 ---
 	// 匹配分享页面 /share/some-uuid
@@ -611,11 +1137,25 @@ async function handleApiRequest(request, env) {
 	if (request.method === 'POST' && pathname === '/api/rss/ingest') {
 		return handleRssIngest(request, env);
 	}
+	if (rssItemsRoute) {
+		const token = extractBearerToken(request);
+		if (token) {
+			const tokenValidation = validateRssApiToken(env, token);
+			if (!tokenValidation.ok) {
+				return jsonResponse({ error: tokenValidation.error }, tokenValidation.status);
+			}
+			return handleRssItemsRoute(rssItemsRoute, request, env);
+		}
+	}
 
 	// --- 从这里开始，所有 API 都需要认证 ---
 	const session = await isSessionAuthenticated(request, env);
 	if (!session) {
 		return jsonResponse({ error: 'Unauthorized' }, 401);
+	}
+
+	if (rssItemsRoute) {
+		return handleRssItemsRoute(rssItemsRoute, request, env);
 	}
 
 	if (request.method === 'POST' && pathname === '/api/notes/merge') {
@@ -1262,14 +1802,10 @@ async function handleLogout(request, env) {
  * POST /api/rss/ingest
  */
 async function handleRssIngest(request, env) {
-	const configuredToken = typeof env.RSS_INGEST_TOKEN === 'string' ? env.RSS_INGEST_TOKEN.trim() : '';
-	if (!configuredToken) {
-		return jsonResponse({ error: 'RSS ingest token is not configured on worker side.' }, 503);
-	}
-
 	const incomingToken = extractBearerToken(request);
-	if (!incomingToken || !constantTimeEquals(incomingToken, configuredToken)) {
-		return jsonResponse({ error: 'Unauthorized' }, 401);
+	const tokenValidation = validateRssApiToken(env, incomingToken);
+	if (!tokenValidation.ok) {
+		return jsonResponse({ error: tokenValidation.error }, tokenValidation.status);
 	}
 
 	const parsed = await parseJsonBody(request);
@@ -1316,15 +1852,26 @@ async function handleRssIngest(request, env) {
 		try {
 			const existing = await findRssIngestItem(db, source, externalId, canonicalUrl);
 
-			if (!existing) {
-				const noteId = await createRssImportedNote(db, folder, content, now);
-				await db.prepare(`
-					INSERT INTO rss_ingest_items
-					(source, external_id, canonical_url, content_hash, note_id, first_seen_at, last_seen_at)
-					VALUES (?, ?, ?, ?, ?, ?, ?)
-				`).bind(source, externalId, canonicalUrl, contentHash, noteId, now, now).run();
-				createdCount++;
-				results.push({
+				if (!existing) {
+					const noteId = await createRssImportedNote(db, folder, content, now);
+					await db.prepare(`
+						INSERT INTO rss_ingest_items
+						(source, external_id, canonical_url, content_hash, note_id, first_seen_at, last_seen_at, read_state, read_at, lifecycle_state)
+						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+					`).bind(
+						source,
+						externalId,
+						canonicalUrl,
+					contentHash,
+					noteId,
+						now,
+						now,
+						RSS_READ_STATE_UNREAD,
+						null,
+						RSS_LIFECYCLE_INBOX
+					).run();
+					createdCount++;
+					results.push({
 					index,
 					status: 'created',
 					note_id: noteId,
@@ -1332,21 +1879,75 @@ async function handleRssIngest(request, env) {
 					title
 				});
 				continue;
-			}
+				}
 
-			if (existing.content_hash === contentHash) {
+				const existingLifecycleState = normalizeRssLifecycleState(existing.lifecycle_state);
+				if (existingLifecycleState !== RSS_LIFECYCLE_INBOX) {
+					const mergedSource = existing.source || source;
+					const mergedExternalId = existing.external_id || externalId;
+					await db.prepare(`
+						UPDATE rss_ingest_items
+						SET source = ?, external_id = ?, canonical_url = ?, last_seen_at = ?
+						WHERE id = ?
+					`).bind(mergedSource, mergedExternalId, canonicalUrl, now, existing.id).run();
+					skippedCount++;
+					results.push({
+						index,
+						status: 'skipped',
+						reason: `lifecycle:${existingLifecycleState}`,
+						lifecycle_state: existingLifecycleState,
+						note_id: existing.note_id,
+						canonical_url: canonicalUrl,
+						title
+					});
+					continue;
+				}
+
+				const existingNote = await db.prepare("SELECT id FROM notes WHERE id = ? LIMIT 1")
+					.bind(existing.note_id)
+					.first();
+			if (existing.content_hash === contentHash && existingNote) {
 				const mergedSource = existing.source || source;
 				const mergedExternalId = existing.external_id || externalId;
-				await db.prepare(`
-					UPDATE rss_ingest_items
-					SET source = ?, external_id = ?, canonical_url = ?, last_seen_at = ?
-					WHERE id = ?
-				`).bind(mergedSource, mergedExternalId, canonicalUrl, now, existing.id).run();
-				skippedCount++;
-				results.push({
+					await db.prepare(`
+						UPDATE rss_ingest_items
+						SET source = ?, external_id = ?, canonical_url = ?, last_seen_at = ?, lifecycle_state = ?
+						WHERE id = ?
+					`).bind(mergedSource, mergedExternalId, canonicalUrl, now, RSS_LIFECYCLE_INBOX, existing.id).run();
+					skippedCount++;
+					results.push({
 					index,
 					status: 'skipped',
 					note_id: existing.note_id,
+					canonical_url: canonicalUrl,
+					title
+				});
+				continue;
+			}
+			if (existing.content_hash === contentHash && !existingNote) {
+				const noteId = await createRssImportedNote(db, folder, content, now);
+				const mergedSource = existing.source || source;
+				const mergedExternalId = existing.external_id || externalId;
+					await db.prepare(`
+						UPDATE rss_ingest_items
+						SET source = ?, external_id = ?, canonical_url = ?, note_id = ?, last_seen_at = ?, read_state = ?, read_at = ?, lifecycle_state = ?
+						WHERE id = ?
+					`).bind(
+						mergedSource,
+					mergedExternalId,
+					canonicalUrl,
+					noteId,
+						now,
+						RSS_READ_STATE_UNREAD,
+						null,
+						RSS_LIFECYCLE_INBOX,
+						existing.id
+					).run();
+				updatedCount++;
+				results.push({
+					index,
+					status: 'recreated',
+					note_id: noteId,
 					canonical_url: canonicalUrl,
 					title
 				});
@@ -1361,9 +1962,20 @@ async function handleRssIngest(request, env) {
 			const mergedExternalId = existing.external_id || externalId;
 			await db.prepare(`
 				UPDATE rss_ingest_items
-				SET source = ?, external_id = ?, canonical_url = ?, content_hash = ?, note_id = ?, last_seen_at = ?
+				SET source = ?, external_id = ?, canonical_url = ?, content_hash = ?, note_id = ?, last_seen_at = ?, read_state = ?, read_at = ?, lifecycle_state = ?
 				WHERE id = ?
-			`).bind(mergedSource, mergedExternalId, canonicalUrl, contentHash, noteId, now, existing.id).run();
+			`).bind(
+				mergedSource,
+				mergedExternalId,
+				canonicalUrl,
+				contentHash,
+				noteId,
+				now,
+				RSS_READ_STATE_UNREAD,
+				null,
+				RSS_LIFECYCLE_INBOX,
+				existing.id
+			).run();
 			updatedCount++;
 			results.push({
 				index,
@@ -2225,6 +2837,23 @@ function extractImageUrls(content) {
 	// 返回一个 JSON 字符串数组，以便直接存入 D1 的 TEXT 字段
 	return JSON.stringify(urls);
 }
+
+function normalizeTagCandidate(rawTag) {
+	const candidate = typeof rawTag === 'string' ? rawTag.trim().toLowerCase() : '';
+	if (!candidate) {
+		return '';
+	}
+	// 排除纯数字标签（例如 #8217、#9876543210）。
+	if (/^\d+$/.test(candidate)) {
+		return '';
+	}
+	// 限制标签长度，避免将超长代码片段误入标签系统。
+	if (candidate.length > 64) {
+		return '';
+	}
+	return candidate;
+}
+
 /**
  * 处理笔记的标签逻辑，过滤掉 URL 中的 #
  */
@@ -2233,12 +2862,16 @@ async function processNoteTags(db, noteId, content) {
 	console.log('[DEBUG] content length:', content.length);
 
 	const plainTextContent = content.replace(/<[^>]*>/g, '');
+	// 避免将代码块/内联代码中的 #token 误识别为标签。
+	const contentForTagScan = plainTextContent
+		.replace(/```[\s\S]*?```/g, ' ')
+		.replace(/`[^`\n]*`/g, ' ');
 	// 1. 定义两个正则表达式：一个用于标签，一个用于 URL
 	const tagRegex = /#([\p{L}\p{N}_-]+)/gu;
 	const urlRegex = /(https?:\/\/[^\s"']*[^\s"'.?,!])/g;
 
 	// 2. 将内容分割成"普通文本"和"链接文本"的交替数组
-	const segments = plainTextContent.split(urlRegex);
+	const segments = contentForTagScan.split(urlRegex);
 	let allTags = [];
 
 	// 3. 遍历所有片段
@@ -2246,7 +2879,9 @@ async function processNoteTags(db, noteId, content) {
 		// 4. 关键：只在【非链接】的文本片段中查找标签
 		//    我们通过重新测试来判断它是否是 URL
 		if (!/^(https?:\/\/[^\s"']*[^\s"'.?,!])/.test(segment)) {
-			const matchedInSegment = [...segment.matchAll(tagRegex)].map(match => match[1].toLowerCase());
+			const matchedInSegment = [...segment.matchAll(tagRegex)]
+				.map(match => normalizeTagCandidate(match[1]))
+				.filter(Boolean);
 			allTags.push(...matchedInSegment);
 		}
 	});

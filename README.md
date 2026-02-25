@@ -127,9 +127,12 @@ Use this endpoint if you want an external script (for example Python RSS fetcher
 - Current behavior:
 	- Normalizes URL and deduplicates by `(source + external_id)` and `canonical_url`
 	- Creates note on first seen article
-	- Updates existing note if content hash changed
+	- Updates existing note if content hash changed, and resets it to `unread`
 	- Skips if unchanged
-	- Default folder: `PARA/Areas/Reading/RSS/<feed>`
+	- Default folder: `RSS/<feed>` (isolated from PARA folders)
+	- New/updated RSS notes do not auto-add `#tags`
+	- Read state is tracked in DB (`unread` / `read`)
+	- Lifecycle is tracked in DB (`inbox` / `reading` / `archived` / `deleted`), and non-`inbox` items are protected from ingest overwrite
 
 Example:
 
@@ -145,12 +148,21 @@ curl -X POST "https://your-project.pages.dev/api/rss/ingest" \
         "url": "https://example.com/posts/123?utm_source=rss",
         "title": "Post title",
         "published_at": "2026-02-24T08:00:00Z",
-        "summary": "Short summary",
-        "tags": ["ai", "rss"]
+        "summary": "Short summary"
       }
     ]
   }'
 ```
+
+### RSS Management API
+
+These endpoints can be called either with a valid session cookie, or with `Authorization: Bearer <RSS_INGEST_TOKEN>`.
+
+- `GET /api/rss/items?state=unread|read|all&archived=false|true|all&source=<feed>&page=1&limit=50`
+- `PATCH /api/rss/items/:noteId/state` with JSON body `{ "state": "read" }` or `{ "state": "unread" }`
+- `POST /api/rss/items/:noteId/archive` with optional JSON `{ "archive": true }` (default `true`) or `{ "archive": false }` to move back
+- `POST /api/rss/items/:noteId/move-to-reading` moves the note to `02-Area/Reading` and marks lifecycle as `reading`
+- `DELETE /api/rss/items/:noteId`
 
 ## 🔍 Rebuilding Search Index (Recommended)
 

@@ -123,9 +123,12 @@
 - 当前行为：
     - 先做 URL 规范化，并按 `(source + external_id)` 与 `canonical_url` 去重
     - 首次出现文章时创建 note
-    - `content_hash` 变化时更新原 note
+    - `content_hash` 变化时更新原 note，并重置为 `unread`
     - 未变化则跳过
-    - 默认 folder：`PARA/Areas/Reading/RSS/<feed>`
+    - 默认 folder：`RSS/<feed>`（与 PARA 目录隔离）
+    - RSS 导入 note 不会自动追加 `#tag`
+    - 阅读状态由数据库字段维护（`unread` / `read`）
+    - 生命周期由数据库字段维护（`inbox` / `reading` / `archived` / `deleted`），非 `inbox` 条目不会被 ingest 覆盖
 
 示例：
 
@@ -141,12 +144,21 @@ curl -X POST "https://your-project.pages.dev/api/rss/ingest" \
         "url": "https://example.com/posts/123?utm_source=rss",
         "title": "Post title",
         "published_at": "2026-02-24T08:00:00Z",
-        "summary": "Short summary",
-        "tags": ["ai", "rss"]
+        "summary": "Short summary"
       }
     ]
   }'
 ```
+
+### RSS 管理 API
+
+这些接口支持两种鉴权方式：已登录 Session Cookie，或 `Authorization: Bearer <RSS_INGEST_TOKEN>`。
+
+- `GET /api/rss/items?state=unread|read|all&archived=false|true|all&source=<feed>&page=1&limit=50`
+- `PATCH /api/rss/items/:noteId/state`，JSON `{ "state": "read" }` 或 `{ "state": "unread" }`
+- `POST /api/rss/items/:noteId/archive`，可选 JSON `{ "archive": true }`（默认）或 `{ "archive": false }`（移回非归档目录）
+- `POST /api/rss/items/:noteId/move-to-reading`：移动到 `02-Area/Reading`，并将生命周期置为 `reading`
+- `DELETE /api/rss/items/:noteId`
 
 ## 🔍 重建搜索索引 (推荐)
 
