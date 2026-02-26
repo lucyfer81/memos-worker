@@ -473,6 +473,21 @@ function appendFolderSubtreeFilter(whereClauses, bindings, folderName, tableAlia
 	bindings.push(DEFAULT_FOLDER_NAME, normalizedFolder, DEFAULT_FOLDER_NAME, `${normalizedFolder}/%`);
 }
 
+function appendExcludeFolderSubtreeFilter(whereClauses, bindings, folderRoot, tableAlias = 'n') {
+	if (!folderRoot || !folderRoot.trim()) {
+		return;
+	}
+	const normalizedRoot = normalizeFolderName(folderRoot);
+	const normalizedExpr = `LOWER(COALESCE(NULLIF(TRIM(${tableAlias}.folder), ''), ?))`;
+	whereClauses.push(`(${normalizedExpr} <> LOWER(?) AND ${normalizedExpr} NOT LIKE LOWER(?))`);
+	bindings.push(DEFAULT_FOLDER_NAME, normalizedRoot, DEFAULT_FOLDER_NAME, `${normalizedRoot}/%`);
+}
+
+function appendExcludeRssFoldersFilter(whereClauses, bindings, tableAlias = 'n') {
+	appendExcludeFolderSubtreeFilter(whereClauses, bindings, RSS_DEFAULT_FOLDER_ROOT, tableAlias);
+	appendExcludeFolderSubtreeFilter(whereClauses, bindings, RSS_LEGACY_FOLDER_ROOT, tableAlias);
+}
+
 async function ensureFolderSchema(db) {
 	if (folderSchemaReady) {
 		return;
@@ -1442,6 +1457,7 @@ async function handleSearchRequest(request, env) {
 	const startTimestamp = searchParams.get('startTimestamp');
 	const endTimestamp = searchParams.get('endTimestamp');
 	const isFavoritesMode = searchParams.get('favorites') === 'true';
+	const excludeRss = searchParams.get('excludeRss') === 'true';
 
 	const db = env.DB;
 	try {
@@ -1471,6 +1487,9 @@ async function handleSearchRequest(request, env) {
 			bindings.push(tagName);
 		}
 		appendFolderSubtreeFilter(whereClauses, bindings, folderName, 'n');
+		if (excludeRss) {
+			appendExcludeRssFoldersFilter(whereClauses, bindings, 'n');
+		}
 
 		const whereString = whereClauses.join(" AND ");
 		const stmt = db.prepare(`
@@ -2089,6 +2108,7 @@ async function handleNotesList(request, env) {
 				const folderName = url.searchParams.get('folder');
 				const isFavoritesMode = url.searchParams.get('favorites') === 'true';
 				const isArchivedMode = url.searchParams.get('archived') === 'true';
+				const excludeRss = url.searchParams.get('excludeRss') === 'true';
 
 				let whereClauses = [];
 				let bindings = [];
@@ -2123,6 +2143,9 @@ async function handleNotesList(request, env) {
 					whereClauses.push("n.is_favorited = 1");
 				}
 				appendFolderSubtreeFilter(whereClauses, bindings, folderName, 'n');
+				if (excludeRss) {
+					appendExcludeRssFoldersFilter(whereClauses, bindings, 'n');
+				}
 				const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
 
 				const query = `

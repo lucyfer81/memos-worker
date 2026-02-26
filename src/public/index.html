@@ -338,7 +338,11 @@
 	}
 
 	#left-sidebar {
-	  display: none !important; /* 隐藏侧边栏 */
+	  display: block !important;
+	  position: static;
+	  top: auto;
+	  max-height: none;
+	  margin-bottom: 1rem;
 	}
 
 	/* 在宽屏模式下，如果右侧栏存在，则中间栏依然受限 */
@@ -350,10 +354,46 @@
 
   @media (max-width: 1150px) {
 	#right-sidebar {
-	  display: none !important; /* 隐藏侧边栏 */
+	  display: block !important;
+	  position: fixed;
+	  left: 0;
+	  right: 0;
+	  bottom: 0;
+	  top: auto;
+	  height: auto;
+	  padding: 0.5rem 0.5rem calc(0.5rem + env(safe-area-inset-bottom, 0px));
+	  background: var(--surface-color);
+	  border-top: 1px solid var(--border-color);
+	  z-index: 980;
 	}
 	#wide-mode-toggle-btn {
 		display: none;
+	}
+	#app-layout-container {
+	  padding-bottom: 6rem;
+	}
+	.sidebar-buttons-group {
+	  width: 100%;
+	  flex-direction: row;
+	  justify-content: flex-start;
+	  overflow-x: auto;
+	  gap: 0.5rem;
+	  padding: 0 0.1rem;
+	}
+	.sidebar-tab-btn {
+	  flex: 0 0 auto;
+	  width: 82px !important;
+	  height: 56px !important;
+	  margin-bottom: 0;
+	  font-size: 0.68rem;
+	  gap: 0.15rem;
+	}
+	.sidebar-tab-btn svg {
+	  width: 22px;
+	  height: 22px;
+	}
+	#back-to-top-btn {
+	  bottom: 88px;
 	}
   }
 	@media (max-width: 700px) {
@@ -369,7 +409,7 @@
 	}
   }
 
-  @media (max-width: 1300px) {
+  @media (max-width: 1300px) and (min-width: 1151px) {
 	.sidebar-tab-btn {
 	  width: 60px !important;
 	  height: 60px !important;
@@ -1476,6 +1516,49 @@
   #back-to-top-btn svg {
 	width: 24px;
 	height: 24px;
+  }
+
+  #mobile-rss-exit-btn {
+	position: fixed;
+	left: 16px;
+	bottom: calc(92px + env(safe-area-inset-bottom, 0px));
+	z-index: 1000;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 10px 14px;
+	border: none;
+	border-radius: 999px;
+	background: var(--primary-color);
+	color: #fff;
+	font-size: 0.82rem;
+	font-weight: 600;
+	box-shadow: 0 6px 18px rgba(0, 0, 0, 0.24);
+	cursor: pointer;
+	opacity: 0;
+	visibility: hidden;
+	pointer-events: none;
+	transform: translateY(10px);
+	transition: opacity 0.25s ease, visibility 0.25s ease, transform 0.25s ease;
+  }
+
+  #mobile-rss-exit-btn svg {
+	width: 18px;
+	height: 18px;
+	fill: currentColor;
+  }
+
+  #mobile-rss-exit-btn.visible {
+	opacity: 1;
+	visibility: visible;
+	pointer-events: auto;
+	transform: translateY(0);
+  }
+
+  @media (min-width: 1151px) {
+	#mobile-rss-exit-btn {
+	  display: none !important;
+	}
   }
 
   .code-block-wrapper {
@@ -3891,6 +3974,13 @@
 	</svg>
 </button>
 
+<button id='mobile-rss-exit-btn' title='Back to Notes'>
+	<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' aria-hidden='true'>
+		<path d='M14.71 6.29a1 1 0 0 1 0 1.41L11.41 11H20a1 1 0 1 1 0 2h-8.59l3.3 3.29a1 1 0 1 1-1.42 1.42l-5-5a1 1 0 0 1 0-1.42l5-5a1 1 0 0 1 1.42 0z'/>
+	</svg>
+	<span>Notes</span>
+</button>
+
 
 <div id='settings-modal-overlay' class='custom-modal-overlay'>
 	<div id='settings-modal-box' class='custom-modal-box'>
@@ -4439,8 +4529,13 @@
 			hasMore: true
 		}
 	};
+	const MOBILE_BOTTOM_NAV_BREAKPOINT = 1150;
 	const collapsedFolderPaths = new Set();
 	const FOLDER_COLLAPSE_STORAGE_KEY = 'memos.folder-tree.collapsed.v1';
+
+	function isMobileBottomNavViewport() {
+		return window.innerWidth <= MOBILE_BOTTOM_NAV_BREAKPOINT;
+	}
 
 	function loadCollapsedFolderState() {
 		try {
@@ -4516,6 +4611,7 @@
 	const fsCancelBtn = document.getElementById('fs-cancel-btn');
 	const enterFullscreenBtn = document.getElementById('enter-fullscreen-btn');
 	const backToTopBtn = document.getElementById('back-to-top-btn');
+	const mobileRssExitBtn = document.getElementById('mobile-rss-exit-btn');
 	const fsEditorDivider = document.getElementById('fs-editor-divider');
 	const insertTagBtn = document.getElementById('insert-tag-btn');
 	const tagDropdown = document.getElementById('tag-dropdown');
@@ -4659,6 +4755,20 @@
 	function updateRssFilterVisibility() {
 		const visible = isRssMode();
 		rssFilterBar.style.display = visible ? 'flex' : 'none';
+	}
+
+	function updateMobileRssExitButton() {
+		if (!mobileRssExitBtn) return;
+		const isNotesOrRssMode = appState.baseMode === 'home' || appState.baseMode === 'rss';
+		const shouldShow = isMobileBottomNavViewport() && isNotesOrRssMode;
+		const targetMode = appState.baseMode === 'rss' ? 'home' : 'rss';
+		mobileRssExitBtn.dataset.targetMode = targetMode;
+		const label = mobileRssExitBtn.querySelector('span');
+		if (label) {
+			label.textContent = targetMode === 'home' ? 'Notes' : 'RSS';
+		}
+		mobileRssExitBtn.title = targetMode === 'home' ? 'Back to Notes' : 'Switch to RSS';
+		mobileRssExitBtn.classList.toggle('visible', shouldShow);
 	}
 
 	function parseJsonArray(value, fallback = []) {
@@ -5244,6 +5354,8 @@
 			isMenuPinned = false;
 			moreMenuPopover.classList.remove('visible');
 		}
+		applySettings();
+		updateMobileRssExitButton();
 	});
 	window.addEventListener('scroll', hideColorPopover, { passive: true });
 
@@ -5679,7 +5791,12 @@
 		}, 200);
 
 		try {
-			const response = await fetch('/api/notes?page=1');
+			const initialUrl = new URL(window.location.origin + '/api/notes');
+			initialUrl.searchParams.set('page', '1');
+			if (appState.baseMode === 'home') {
+				initialUrl.searchParams.set('excludeRss', 'true');
+			}
+			const response = await fetch(initialUrl.toString());
 			if (response.ok) {
 				const data = await response.json();
 				// 显示应用主界面
@@ -5998,11 +6115,13 @@
 			document.documentElement.style.setProperty('--surface-input-bg', 'var(--bg-color)');
 		}
 
+			const forceShowModeTabs = isMobileBottomNavViewport();
 			searchStatsContainer.style.display = settings.showSearchBar ? '' : 'none';
 			foldersSectionWrapper.style.display = settings.showFolders ? '' : 'none';
 			tagsSectionWrapper.style.display = settings.showTags ? '' : 'none';
-			rightSidebar.style.display = settings.showRightSidebar ? '' : 'none';
+			rightSidebar.style.display = (settings.showRightSidebar || forceShowModeTabs) ? '' : 'none';
 			notesSection.classList.toggle('date-grouping-enabled', settings.enableDateGrouping);
+			updateMobileRssExitButton();
 
 			const areAllSidebarsHidden = !settings.showSearchBar && !settings.showFolders && !settings.showTags;
 		const currentDest = settings.imageUploadDestination || 'local';
@@ -6019,7 +6138,7 @@
 			// 否则，确保移除这个类，恢复到正常的三栏或宽屏模式
 			appLayoutContainer.classList.remove('no-sidebars');
 		}
-		if (!settings.showRightSidebar) {
+		if (!settings.showRightSidebar && !isMobileBottomNavViewport()) {
 			appLayoutContainer.classList.add('no-right-sidebar');
 		} else {
 			appLayoutContainer.classList.remove('no-right-sidebar');
@@ -6346,7 +6465,10 @@
 		document.querySelectorAll('.sidebar-tab-btn').forEach(btn => {
 			btn.classList.toggle('active', btn.dataset.tabName === appState.baseMode);
 		});
+		ensureFolderFilterVisibleForCurrentMode();
+		renderFolderTree();
 		updateRssFilterVisibility();
+		updateMobileRssExitButton();
 	}
 
 	homeTabBtn.addEventListener('click', () => {
@@ -8069,6 +8191,16 @@
 		});
 	});
 
+	mobileRssExitBtn.addEventListener('click', () => {
+		const targetMode = mobileRssExitBtn.dataset.targetMode;
+		if (!targetMode || targetMode === appState.baseMode) return;
+		if (targetMode !== 'home' && targetMode !== 'rss') return;
+		appState.baseMode = targetMode;
+		updateSidebarTabsUI();
+		updateEditorVisibility();
+		reloadNotes();
+	});
+
 	let allTagsCache = [];
 	let isTagDropdownOpen = false;
 	// 渲染标签列表到下拉框
@@ -8305,6 +8437,9 @@
 			}
 			if (appState.baseMode === 'archive') {
 				url.searchParams.set('archived', 'true');
+			}
+			if (appState.baseMode === 'home') {
+				url.searchParams.set('excludeRss', 'true');
 			}
 
 			const response = await fetch(url.toString());
@@ -9505,11 +9640,29 @@
 	const folderTreeState = {
 		rows: []
 	};
+	const RSS_FOLDER_ROOT = 'RSS';
+	const RSS_LEGACY_FOLDER_ROOT = '02-Area/Reading/RSS';
 
 	function isFolderInSubtree(path, rootPath) {
 		const normalizedPath = normalizeFolderPath(path).toLowerCase();
 		const normalizedRoot = normalizeFolderPath(rootPath).toLowerCase();
 		return normalizedPath === normalizedRoot || normalizedPath.startsWith(`${normalizedRoot}/`);
+	}
+
+	function isRssFolderPath(path) {
+		return isFolderInSubtree(path, RSS_FOLDER_ROOT) || isFolderInSubtree(path, RSS_LEGACY_FOLDER_ROOT);
+	}
+
+	function shouldHideFolderInCurrentMode(path) {
+		return appState.baseMode === 'home' && isRssFolderPath(path);
+	}
+
+	function ensureFolderFilterVisibleForCurrentMode() {
+		if (!appState.filters.folder || !shouldHideFolderInCurrentMode(appState.filters.folder)) {
+			return;
+		}
+		appState.filters.folder = null;
+		syncComposeFolderSelect('Inbox');
 	}
 
 	function replaceFolderPrefix(path, fromPath, toPath) {
@@ -9739,7 +9892,8 @@
 
 	function renderFolderTree() {
 		const foldersContainer = document.getElementById('folders-container');
-		const rows = folderTreeState.rows;
+		ensureFolderFilterVisibleForCurrentMode();
+		const rows = (folderTreeState.rows || []).filter(row => !shouldHideFolderInCurrentMode(row.name));
 		const activeFolderPath = appState.filters.folder
 			? normalizeFolderPath(appState.filters.folder).toLowerCase()
 			: null;
