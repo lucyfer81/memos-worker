@@ -16,6 +16,11 @@ const RSS_LIFECYCLE_INBOX = 'inbox';
 const RSS_LIFECYCLE_READING = 'reading';
 const RSS_LIFECYCLE_ARCHIVED = 'archived';
 const RSS_LIFECYCLE_DELETED = 'deleted';
+const RSS_ARCHIVE_RETENTION_DAYS = 30;
+const RSS_ARCHIVE_RETENTION_MS = RSS_ARCHIVE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+const RSS_ARCHIVE_PURGE_BATCH_SIZE = 200;
+const RSS_TOMBSTONE_KEY_CANONICAL_URL = 'canonical_url';
+const RSS_TOMBSTONE_KEY_SOURCE_EXTERNAL = 'source_external';
 const LINK_POLICY_STRICT = 'strict';
 const LINK_POLICY_SOFT = 'soft';
 const LINK_POLICY_OFF = 'off';
@@ -550,10 +555,22 @@ async function ensureRssIngestSchema(db) {
 						last_seen_at INTEGER NOT NULL,
 						read_state TEXT DEFAULT 'unread' NOT NULL,
 						read_at INTEGER,
+						archived_at INTEGER,
 						lifecycle_state TEXT DEFAULT 'inbox' NOT NULL,
 						FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
 					)
 				`).run();
+			await db.prepare(`
+				CREATE TABLE IF NOT EXISTS rss_ingest_tombstones (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					key_type TEXT NOT NULL,
+					key_value TEXT NOT NULL,
+					source TEXT,
+					external_id TEXT,
+					canonical_url TEXT,
+					deleted_at INTEGER NOT NULL
+				)
+			`).run();
 			try {
 				await db.prepare("ALTER TABLE rss_ingest_items ADD COLUMN read_state TEXT DEFAULT 'unread' NOT NULL").run();
 			} catch (e) {
@@ -565,6 +582,13 @@ async function ensureRssIngestSchema(db) {
 				await db.prepare("ALTER TABLE rss_ingest_items ADD COLUMN read_at INTEGER").run();
 			} catch (e) {
 				if (!isDuplicateColumnError(e, 'read_at')) {
+					throw e;
+				}
+			}
+			try {
+				await db.prepare("ALTER TABLE rss_ingest_items ADD COLUMN archived_at INTEGER").run();
+			} catch (e) {
+				if (!isDuplicateColumnError(e, 'archived_at')) {
 					throw e;
 				}
 			}
@@ -630,6 +654,16 @@ async function ensureRssIngestSchema(db) {
 				RSS_LIFECYCLE_INBOX
 			).run();
 			await db.prepare(`
+				UPDATE rss_ingest_items
+				SET archived_at = COALESCE(archived_at, read_at, last_seen_at)
+				WHERE lifecycle_state = ? AND archived_at IS NULL
+			`).bind(RSS_LIFECYCLE_ARCHIVED).run();
+			await db.prepare(`
+				UPDATE rss_ingest_items
+				SET archived_at = NULL
+				WHERE lifecycle_state <> ?
+			`).bind(RSS_LIFECYCLE_ARCHIVED).run();
+			await db.prepare(`
 				CREATE UNIQUE INDEX IF NOT EXISTS idx_rss_ingest_source_external_unique
 				ON rss_ingest_items(source, external_id)
 				WHERE external_id IS NOT NULL AND TRIM(external_id) <> ''
@@ -639,6 +673,9 @@ async function ensureRssIngestSchema(db) {
 			await db.prepare("CREATE INDEX IF NOT EXISTS idx_rss_ingest_last_seen_at ON rss_ingest_items(last_seen_at DESC)").run();
 			await db.prepare("CREATE INDEX IF NOT EXISTS idx_rss_ingest_read_state ON rss_ingest_items(read_state)").run();
 			await db.prepare("CREATE INDEX IF NOT EXISTS idx_rss_ingest_lifecycle_state ON rss_ingest_items(lifecycle_state)").run();
+			await db.prepare("CREATE INDEX IF NOT EXISTS idx_rss_ingest_archived_at ON rss_ingest_items(archived_at)").run();
+			await db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_rss_tombstones_key_unique ON rss_ingest_tombstones(key_type, key_value)").run();
+			await db.prepare("CREATE INDEX IF NOT EXISTS idx_rss_tombstones_deleted_at ON rss_ingest_tombstones(deleted_at DESC)").run();
 			rssIngestSchemaReady = true;
 		})().catch((e) => {
 			rssIngestSchemaInitPromise = null;
@@ -667,6 +704,111 @@ async function findRssIngestItem(db, source, externalId, canonicalUrl) {
 		LIMIT 1
 	`).bind(canonicalUrl).first();
 	return byCanonicalUrl || null;
+}
+
+function buildRssSourceExternalKey(source, externalId) {
+	const normalizedSource = normalizeRssSource(source);
+	const normalizedExternalId = normalizeOptionalExternalId(externalId);
+	if (!normalizedSource || !normalizedExternalId) {
+		return '';
+	}
+	return `${normalizedSource}\n${normalizedExternalId}`;
+}
+
+function buildRssTombstoneRows(source, externalId, canonicalUrl, deletedAt) {
+	const rows = [];
+	const normalizedCanonicalUrl = normalizeCanonicalUrl(canonicalUrl);
+	const sourceExternalKey = buildRssSourceExternalKey(source, externalId);
+	if (normalizedCanonicalUrl) {
+		rows.push({
+			keyType: RSS_TOMBSTONE_KEY_CANONICAL_URL,
+			keyValue: normalizedCanonicalUrl,
+			source: normalizeRssSource(source),
+			externalId: normalizeOptionalExternalId(externalId),
+			canonicalUrl: normalizedCanonicalUrl,
+			deletedAt
+		});
+	}
+	if (sourceExternalKey) {
+		rows.push({
+			keyType: RSS_TOMBSTONE_KEY_SOURCE_EXTERNAL,
+			keyValue: sourceExternalKey,
+			source: normalizeRssSource(source),
+			externalId: normalizeOptionalExternalId(externalId),
+			canonicalUrl: normalizedCanonicalUrl,
+			deletedAt
+		});
+	}
+	return rows;
+}
+
+async function upsertRssTombstones(db, source, externalId, canonicalUrl, deletedAt = Date.now()) {
+	const rows = buildRssTombstoneRows(source, externalId, canonicalUrl, deletedAt);
+	for (const row of rows) {
+		await db.prepare(`
+			INSERT INTO rss_ingest_tombstones (key_type, key_value, source, external_id, canonical_url, deleted_at)
+			VALUES (?, ?, ?, ?, ?, ?)
+			ON CONFLICT(key_type, key_value) DO UPDATE SET
+				source = excluded.source,
+				external_id = excluded.external_id,
+				canonical_url = excluded.canonical_url,
+				deleted_at = CASE
+					WHEN excluded.deleted_at > rss_ingest_tombstones.deleted_at THEN excluded.deleted_at
+					ELSE rss_ingest_tombstones.deleted_at
+				END
+		`).bind(
+			row.keyType,
+			row.keyValue,
+			row.source || null,
+			row.externalId,
+			row.canonicalUrl || null,
+			row.deletedAt
+		).run();
+	}
+	return rows.length;
+}
+
+async function isRssItemTombstoned(db, source, externalId, canonicalUrl) {
+	const normalizedCanonicalUrl = normalizeCanonicalUrl(canonicalUrl);
+	const sourceExternalKey = buildRssSourceExternalKey(source, externalId);
+	const whereClauses = [];
+	const bindings = [];
+	if (normalizedCanonicalUrl) {
+		whereClauses.push("(key_type = ? AND key_value = ?)");
+		bindings.push(RSS_TOMBSTONE_KEY_CANONICAL_URL, normalizedCanonicalUrl);
+	}
+	if (sourceExternalKey) {
+		whereClauses.push("(key_type = ? AND key_value = ?)");
+		bindings.push(RSS_TOMBSTONE_KEY_SOURCE_EXTERNAL, sourceExternalKey);
+	}
+	if (whereClauses.length === 0) {
+		return false;
+	}
+	const matched = await db.prepare(`
+		SELECT id
+		FROM rss_ingest_tombstones
+		WHERE ${whereClauses.join(' OR ')}
+		LIMIT 1
+	`).bind(...bindings).first();
+	return Boolean(matched);
+}
+
+async function cleanupExpiredRssArchivedItems(db, now = Date.now()) {
+	const cutoff = now - RSS_ARCHIVE_RETENTION_MS;
+	const { results } = await db.prepare(`
+		SELECT id, note_id, source, external_id, canonical_url
+		FROM rss_ingest_items
+		WHERE lifecycle_state = ? AND archived_at IS NOT NULL AND archived_at <= ?
+		ORDER BY archived_at ASC, id ASC
+		LIMIT ?
+	`).bind(RSS_LIFECYCLE_ARCHIVED, cutoff, RSS_ARCHIVE_PURGE_BATCH_SIZE).all();
+	const rows = results || [];
+	for (const row of rows) {
+		await upsertRssTombstones(db, row.source, row.external_id, row.canonical_url, now);
+		await db.prepare("DELETE FROM notes WHERE id = ?").bind(row.note_id).run();
+		await db.prepare("DELETE FROM rss_ingest_items WHERE id = ?").bind(row.id).run();
+	}
+	return rows.length;
 }
 
 async function clearNoteTags(db, noteId) {
@@ -764,6 +906,11 @@ async function handleRssItemsList(request, env) {
 	const db = env.DB;
 	await ensureFolderSchema(db);
 	await ensureRssIngestSchema(db);
+	try {
+		await cleanupExpiredRssArchivedItems(db);
+	} catch (e) {
+		console.error('RSS archive cleanup failed before listing:', e?.message || e);
+	}
 
 	const url = new URL(request.url);
 	const source = normalizeRssSource(url.searchParams.get('source'));
@@ -784,18 +931,22 @@ async function handleRssItemsList(request, env) {
 	const limit = parsePositiveInteger(url.searchParams.get('limit'), RSS_LIST_DEFAULT_LIMIT, RSS_LIST_MAX_LIMIT);
 	const offset = (page - 1) * limit;
 
-	const whereClauses = [];
-	const bindings = [];
-	if (source) {
-		whereClauses.push("r.source = ?");
-		bindings.push(source);
-	}
+	const baseWhereClauses = [];
+	const baseBindings = [];
 	if (normalizedState) {
-		whereClauses.push("r.read_state = ?");
-		bindings.push(normalizedState);
+		baseWhereClauses.push("r.read_state = ?");
+		baseBindings.push(normalizedState);
 	}
-	appendRssLifecycleFilter(whereClauses, bindings, archivedFilter);
-	const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+	appendRssLifecycleFilter(baseWhereClauses, baseBindings, archivedFilter);
+	const baseWhereClause = baseWhereClauses.length > 0 ? `WHERE ${baseWhereClauses.join(' AND ')}` : '';
+
+	const itemWhereClauses = [...baseWhereClauses];
+	const itemBindings = [...baseBindings];
+	if (source) {
+		itemWhereClauses.push("r.source = ?");
+		itemBindings.push(source);
+	}
+	const itemWhereClause = itemWhereClauses.length > 0 ? `WHERE ${itemWhereClauses.join(' AND ')}` : '';
 
 	const stmt = db.prepare(`
 		SELECT
@@ -821,11 +972,11 @@ async function handleRssItemsList(request, env) {
 			n.link_status
 		FROM rss_ingest_items r
 		JOIN notes n ON n.id = r.note_id
-		${whereClause}
+		${itemWhereClause}
 		ORDER BY r.last_seen_at DESC, r.id DESC
 		LIMIT ? OFFSET ?
 	`);
-	const { results } = await stmt.bind(...bindings, limit + 1, offset).all();
+	const { results } = await stmt.bind(...itemBindings, limit + 1, offset).all();
 	const rows = results || [];
 	const hasMore = rows.length > limit;
 	const items = rows.slice(0, limit).map((row) => {
@@ -855,12 +1006,24 @@ async function handleRssItemsList(request, env) {
 				title: extractRssTitleFromContent(row.content, row.canonical_url)
 			};
 	});
+	const sourceOptionsStmt = db.prepare(`
+		SELECT DISTINCT r.source
+		FROM rss_ingest_items r
+		${baseWhereClause}
+		ORDER BY LOWER(r.source) ASC
+		LIMIT 500
+	`);
+	const { results: sourceOptionRows } = await sourceOptionsStmt.bind(...baseBindings).all();
+	const sourceOptions = (sourceOptionRows || [])
+		.map((row) => normalizeRssSource(row.source))
+		.filter((value) => Boolean(value));
 
 	return jsonResponse({
 		items,
 		hasMore,
 		page,
 		limit,
+		sourceOptions,
 		filters: {
 			source: source || null,
 			state: normalizedState || 'all',
@@ -969,15 +1132,18 @@ async function handleRssItemArchive(request, noteId, env) {
 	let nextReadAt = existing.read_at === null || existing.read_at === undefined
 		? null
 		: Number(existing.read_at);
+	let nextArchivedAt = null;
 	if (archive) {
+		const now = Date.now();
 		nextReadState = RSS_READ_STATE_READ;
-		nextReadAt = nextReadAt || Date.now();
+		nextReadAt = nextReadAt || now;
+		nextArchivedAt = now;
 	}
 	await db.prepare(`
 		UPDATE rss_ingest_items
-		SET read_state = ?, read_at = ?, lifecycle_state = ?
+		SET read_state = ?, read_at = ?, lifecycle_state = ?, archived_at = ?
 		WHERE note_id = ?
-	`).bind(nextReadState, nextReadAt, nextLifecycle, id).run();
+	`).bind(nextReadState, nextReadAt, nextLifecycle, nextArchivedAt, id).run();
 
 	return jsonResponse({
 		success: true,
@@ -986,7 +1152,8 @@ async function handleRssItemArchive(request, noteId, env) {
 		folder: nextFolder,
 		lifecycle_state: nextLifecycle,
 		read_state: nextReadState,
-		read_at: nextReadAt
+		read_at: nextReadAt,
+		archived_at: nextArchivedAt
 	});
 }
 
@@ -1025,7 +1192,7 @@ async function handleRssItemMoveToReading(_request, noteId, env) {
 		: Number(existing.read_at);
 	await db.prepare(`
 		UPDATE rss_ingest_items
-		SET lifecycle_state = ?, read_state = ?, read_at = ?
+		SET lifecycle_state = ?, read_state = ?, read_at = ?, archived_at = NULL
 		WHERE note_id = ?
 	`).bind(RSS_LIFECYCLE_READING, RSS_READ_STATE_READ, nextReadAt, id).run();
 
@@ -1048,7 +1215,7 @@ async function handleRssItemDelete(request, noteId, env) {
 	const db = env.DB;
 	await ensureRssIngestSchema(db);
 	const existing = await db.prepare(`
-		SELECT r.note_id, n.id AS note_exists
+		SELECT r.note_id, r.source, r.external_id, r.canonical_url, n.id AS note_exists
 		FROM rss_ingest_items r
 		LEFT JOIN notes n ON n.id = r.note_id
 		WHERE r.note_id = ?
@@ -1059,12 +1226,14 @@ async function handleRssItemDelete(request, noteId, env) {
 	}
 
 	if (!existing.note_exists) {
+		await upsertRssTombstones(db, existing.source, existing.external_id, existing.canonical_url, Date.now());
 		await db.prepare("DELETE FROM rss_ingest_items WHERE note_id = ?").bind(id).run();
 		return jsonResponse({ success: true, note_id: id, deleted: false, cleaned_mapping: true });
 	}
 
 	const response = await handleNoteDetail(request, String(id), env);
 	if (response.status === 204) {
+		await upsertRssTombstones(db, existing.source, existing.external_id, existing.canonical_url, Date.now());
 		return jsonResponse({ success: true, note_id: id, deleted: true });
 	}
 	return response;
@@ -1845,6 +2014,11 @@ async function handleRssIngest(request, env) {
 	const db = env.DB;
 	await ensureFolderSchema(db);
 	await ensureRssIngestSchema(db);
+	try {
+		await cleanupExpiredRssArchivedItems(db);
+	} catch (e) {
+		console.error('RSS archive cleanup failed before ingest:', e?.message || e);
+	}
 
 	let createdCount = 0;
 	let updatedCount = 0;
@@ -1866,17 +2040,30 @@ async function handleRssIngest(request, env) {
 
 		const now = Date.now();
 		const { source, externalId, canonicalUrl, folder, content, title } = normalized.item;
-		const contentHash = await computeSha256Hex(content);
 
 		try {
+			const isTombstoned = await isRssItemTombstoned(db, source, externalId, canonicalUrl);
+			if (isTombstoned) {
+				skippedCount++;
+				results.push({
+					index,
+					status: 'skipped',
+					reason: `lifecycle:${RSS_LIFECYCLE_DELETED}`,
+					lifecycle_state: RSS_LIFECYCLE_DELETED,
+					canonical_url: canonicalUrl,
+					title
+				});
+				continue;
+			}
+			const contentHash = await computeSha256Hex(content);
 			const existing = await findRssIngestItem(db, source, externalId, canonicalUrl);
 
 				if (!existing) {
 					const noteId = await createRssImportedNote(db, folder, content, now);
 					await db.prepare(`
 						INSERT INTO rss_ingest_items
-						(source, external_id, canonical_url, content_hash, note_id, first_seen_at, last_seen_at, read_state, read_at, lifecycle_state)
-						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+						(source, external_id, canonical_url, content_hash, note_id, first_seen_at, last_seen_at, read_state, read_at, archived_at, lifecycle_state)
+						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 					`).bind(
 						source,
 						externalId,
@@ -1886,6 +2073,7 @@ async function handleRssIngest(request, env) {
 						now,
 						now,
 						RSS_READ_STATE_UNREAD,
+						null,
 						null,
 						RSS_LIFECYCLE_INBOX
 					).run();
@@ -1930,7 +2118,7 @@ async function handleRssIngest(request, env) {
 				const mergedExternalId = existing.external_id || externalId;
 					await db.prepare(`
 						UPDATE rss_ingest_items
-						SET source = ?, external_id = ?, canonical_url = ?, last_seen_at = ?, lifecycle_state = ?
+						SET source = ?, external_id = ?, canonical_url = ?, last_seen_at = ?, lifecycle_state = ?, archived_at = NULL
 						WHERE id = ?
 					`).bind(mergedSource, mergedExternalId, canonicalUrl, now, RSS_LIFECYCLE_INBOX, existing.id).run();
 					skippedCount++;
@@ -1949,7 +2137,7 @@ async function handleRssIngest(request, env) {
 				const mergedExternalId = existing.external_id || externalId;
 					await db.prepare(`
 						UPDATE rss_ingest_items
-						SET source = ?, external_id = ?, canonical_url = ?, note_id = ?, last_seen_at = ?, read_state = ?, read_at = ?, lifecycle_state = ?
+						SET source = ?, external_id = ?, canonical_url = ?, note_id = ?, last_seen_at = ?, read_state = ?, read_at = ?, lifecycle_state = ?, archived_at = NULL
 						WHERE id = ?
 					`).bind(
 						mergedSource,
@@ -1981,7 +2169,7 @@ async function handleRssIngest(request, env) {
 			const mergedExternalId = existing.external_id || externalId;
 			await db.prepare(`
 				UPDATE rss_ingest_items
-				SET source = ?, external_id = ?, canonical_url = ?, content_hash = ?, note_id = ?, last_seen_at = ?, read_state = ?, read_at = ?, lifecycle_state = ?
+				SET source = ?, external_id = ?, canonical_url = ?, content_hash = ?, note_id = ?, last_seen_at = ?, read_state = ?, read_at = ?, lifecycle_state = ?, archived_at = NULL
 				WHERE id = ?
 			`).bind(
 				mergedSource,

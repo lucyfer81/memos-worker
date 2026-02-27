@@ -48,8 +48,19 @@ CREATE TABLE rss_ingest_items (
   last_seen_at INTEGER NOT NULL,
   read_state TEXT DEFAULT 'unread' NOT NULL,
   read_at INTEGER,
+  archived_at INTEGER,
   lifecycle_state TEXT DEFAULT 'inbox' NOT NULL,
   FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+);
+
+CREATE TABLE rss_ingest_tombstones (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  key_type TEXT NOT NULL,
+  key_value TEXT NOT NULL,
+  source TEXT,
+  external_id TEXT,
+  canonical_url TEXT,
+  deleted_at INTEGER NOT NULL
 );
 
 CREATE UNIQUE INDEX idx_rss_ingest_source_external_unique
@@ -63,6 +74,9 @@ CREATE INDEX idx_rss_ingest_note_id ON rss_ingest_items(note_id);
 CREATE INDEX idx_rss_ingest_last_seen_at ON rss_ingest_items(last_seen_at DESC);
 CREATE INDEX idx_rss_ingest_read_state ON rss_ingest_items(read_state);
 CREATE INDEX idx_rss_ingest_lifecycle_state ON rss_ingest_items(lifecycle_state);
+CREATE INDEX idx_rss_ingest_archived_at ON rss_ingest_items(archived_at);
+CREATE UNIQUE INDEX idx_rss_tombstones_key_unique ON rss_ingest_tombstones(key_type, key_value);
+CREATE INDEX idx_rss_tombstones_deleted_at ON rss_ingest_tombstones(deleted_at DESC);
 
 
 CREATE TABLE nodes (

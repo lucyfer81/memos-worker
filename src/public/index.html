@@ -3450,8 +3450,25 @@
 	color: var(--text-color);
   }
 
-  .rss-source-filter input {
+  .rss-source-filter select {
 	min-width: 220px;
+  }
+
+  @media (max-width: 700px) {
+	.rss-filter-bar {
+	  align-items: stretch;
+	}
+	.rss-filter-item {
+	  flex: 1 1 100%;
+	}
+	.rss-filter-item select {
+	  width: 100%;
+	}
+	#rss-filter-apply-btn,
+	#rss-filter-clear-btn {
+	  flex: 1 1 calc(50% - 6px);
+	  min-height: 36px;
+	}
   }
 
   .note-rss-source,
@@ -3711,9 +3728,11 @@
 								<option value='all'>All</option>
 							</select>
 						</label>
-						<label class='rss-filter-item rss-source-filter' for='rss-source-filter-input'>
+						<label class='rss-filter-item rss-source-filter' for='rss-source-filter-select'>
 							<span>Source</span>
-							<input type='search' id='rss-source-filter-input' placeholder='Feed name (exact)'>
+							<select id='rss-source-filter-select'>
+								<option value=''>All sources</option>
+							</select>
 						</label>
 						<button type='button' id='rss-filter-apply-btn' class='btn btn-secondary'>Apply</button>
 						<button type='button' id='rss-filter-clear-btn' class='btn btn-secondary'>Reset</button>
@@ -4515,7 +4534,8 @@
 		rss: {
 			state: RSS_DEFAULT_STATE,
 			archived: RSS_DEFAULT_ARCHIVED,
-			source: RSS_DEFAULT_SOURCE
+			source: RSS_DEFAULT_SOURCE,
+			sourceOptions: []
 		},
 		filters: {
 			query: '',
@@ -4729,16 +4749,50 @@
 		return RSS_DEFAULT_ARCHIVED;
 	}
 
+	function normalizeRssSourceOptions(values) {
+		if (!Array.isArray(values)) {
+			return [];
+		}
+		const unique = new Set();
+		values.forEach((value) => {
+			const normalized = typeof value === 'string'
+				? value.trim().slice(0, 255)
+				: '';
+			if (normalized) {
+				unique.add(normalized);
+			}
+		});
+		return Array.from(unique.values()).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+	}
+
+	function renderRssSourceFilterOptions(selectedSource = RSS_DEFAULT_SOURCE) {
+		const normalizedSelectedSource = typeof selectedSource === 'string'
+			? selectedSource.trim()
+			: RSS_DEFAULT_SOURCE;
+		const sourceOptions = normalizeRssSourceOptions(appState.rss.sourceOptions);
+		if (normalizedSelectedSource && !sourceOptions.includes(normalizedSelectedSource)) {
+			sourceOptions.unshift(normalizedSelectedSource);
+		}
+		rssSourceFilterSelect.innerHTML = `
+			<option value=''>All sources</option>
+			${sourceOptions.map(sourceName => `<option value='${escapeHtml(sourceName)}'>${escapeHtml(sourceName)}</option>`).join('')}
+		`;
+		rssSourceFilterSelect.value = normalizedSelectedSource;
+		if (rssSourceFilterSelect.value !== normalizedSelectedSource) {
+			rssSourceFilterSelect.value = RSS_DEFAULT_SOURCE;
+		}
+	}
+
 	function syncRssFilterControls() {
 		rssStateFilter.value = normalizeRssStateFilter(appState.rss.state);
 		rssArchivedFilter.value = normalizeRssArchivedFilter(appState.rss.archived);
-		rssSourceFilterInput.value = typeof appState.rss.source === 'string' ? appState.rss.source : RSS_DEFAULT_SOURCE;
+		renderRssSourceFilterOptions(typeof appState.rss.source === 'string' ? appState.rss.source : RSS_DEFAULT_SOURCE);
 	}
 
 	function applyRssFilterControls() {
 		appState.rss.state = normalizeRssStateFilter(rssStateFilter.value);
 		appState.rss.archived = normalizeRssArchivedFilter(rssArchivedFilter.value);
-		appState.rss.source = (rssSourceFilterInput.value || '').trim();
+		appState.rss.source = (rssSourceFilterSelect.value || '').trim();
 	}
 
 	function resetRssFilters() {
@@ -4812,7 +4866,7 @@
 	const rssFilterBar = document.getElementById('rss-filter-bar');
 	const rssStateFilter = document.getElementById('rss-state-filter');
 	const rssArchivedFilter = document.getElementById('rss-archived-filter');
-	const rssSourceFilterInput = document.getElementById('rss-source-filter-input');
+	const rssSourceFilterSelect = document.getElementById('rss-source-filter-select');
 	const rssFilterApplyBtn = document.getElementById('rss-filter-apply-btn');
 	const rssFilterClearBtn = document.getElementById('rss-filter-clear-btn');
 
@@ -4941,6 +4995,7 @@
 		const favoriteBtn = notePopoverMenu.querySelector('[data-action="favorite"]');
 		const pinBtn = notePopoverMenu.querySelector('[data-action="pin"]');
 		const archiveBtn = notePopoverMenu.querySelector('[data-action="archive"], [data-action="unarchive"], [data-action="rss-archive"], [data-action="rss-unarchive"]');
+		const deleteBtn = notePopoverMenu.querySelector('[data-action="delete"]');
 		const rssMoveBtn = notePopoverMenu.querySelector('[data-rss-move="true"]');
 		const rssReadBtn = notePopoverMenu.querySelector('[data-rss-read="true"]');
 		const shareBtn = notePopoverMenu.querySelector('[data-action="share"]');
@@ -4955,6 +5010,9 @@
 			}
 			favoriteBtn.style.display = 'none';
 			pinBtn.style.display = 'none';
+			if (deleteBtn) {
+				deleteBtn.style.display = 'none';
+			}
 
 			archiveBtn.style.display = '';
 			archiveBtn.classList.toggle('unarchive-mode', isArchivedRssItem);
@@ -4996,6 +5054,9 @@
 			// 强制隐藏其他不相关的按钮
 			favoriteBtn.style.display = 'none';
 			pinBtn.style.display = 'none';
+			if (deleteBtn) {
+				deleteBtn.style.display = '';
+			}
 		} else {
 			shareBtn.style.display = settings.enableSharing ? '' : 'none';
 			if (rssMoveBtn) {
@@ -5020,6 +5081,9 @@
 			// 只有在设置开启时，才显示收藏和置顶按钮
 			favoriteBtn.style.display = settings.showFavorites ? '' : 'none';
 			pinBtn.style.display = settings.enablePinning ? '' : 'none';
+			if (deleteBtn) {
+				deleteBtn.style.display = '';
+			}
 
 			// 如果按钮是可见的，再更新它们的激活状态 (是否已收藏/已置顶)
 			if (noteData) {
@@ -5247,20 +5311,17 @@
 			}
 				case 'delete': {
 					if (!noteElement) return;
+					if (isRssMode()) {
+						showCustomAlert('RSS items can only be archived.', 'info');
+						return;
+					}
 					const confirmed = await showCustomConfirm('Are you sure you want to delete this note?');
 					if (!confirmed) return;
 					try {
-						if (isRssMode()) {
-							const res = await fetch(`/api/rss/items/${noteId}`, { method: 'DELETE' });
-							const payload = await res.json().catch(() => ({}));
-							if (!res.ok) throw new Error(payload.error || 'Failed to delete RSS item.');
-							reloadNotes();
-						} else {
-							waterfallObserver.unobserve(noteElement);
-							await fetch(`/api/notes/${noteId}`, { method: 'DELETE' });
-							noteElement.remove();
-							loadAndRenderTags();
-						}
+						waterfallObserver.unobserve(noteElement);
+						await fetch(`/api/notes/${noteId}`, { method: 'DELETE' });
+						noteElement.remove();
+						loadAndRenderTags();
 						loadAndRenderFolders();
 					} catch (error) {
 						showCustomAlert(error.message, 'error');
@@ -6616,9 +6677,7 @@
 		}
 	});
 
-	rssSourceFilterInput.addEventListener('keydown', (e) => {
-		if (e.key !== 'Enter') return;
-		e.preventDefault();
+	rssSourceFilterSelect.addEventListener('change', () => {
 		applyRssFilterControls();
 		if (isRssMode()) {
 			reloadNotes();
@@ -8365,6 +8424,7 @@
 		}
 		const payload = await response.json();
 		const normalizedFilters = payload.filters || {};
+		appState.rss.sourceOptions = normalizeRssSourceOptions(payload.sourceOptions || payload.source_options || []);
 		appState.rss.state = normalizeRssStateFilter(normalizedFilters.state || appState.rss.state);
 		appState.rss.archived = normalizeRssArchivedFilter(normalizedFilters.archived || appState.rss.archived);
 		appState.rss.source = typeof normalizedFilters.source === 'string'
@@ -9641,7 +9701,9 @@
 		rows: []
 	};
 	const RSS_FOLDER_ROOT = 'RSS';
+	const RSS_ARCHIVE_FOLDER_ROOT = `${RSS_FOLDER_ROOT}/Archive`;
 	const RSS_LEGACY_FOLDER_ROOT = '02-Area/Reading/RSS';
+	const RSS_LEGACY_ARCHIVE_FOLDER_ROOT = `${RSS_LEGACY_FOLDER_ROOT}/Archive`;
 
 	function isFolderInSubtree(path, rootPath) {
 		const normalizedPath = normalizeFolderPath(path).toLowerCase();
@@ -9653,8 +9715,18 @@
 		return isFolderInSubtree(path, RSS_FOLDER_ROOT) || isFolderInSubtree(path, RSS_LEGACY_FOLDER_ROOT);
 	}
 
+	function isRssArchiveFolderPath(path) {
+		return isFolderInSubtree(path, RSS_ARCHIVE_FOLDER_ROOT) || isFolderInSubtree(path, RSS_LEGACY_ARCHIVE_FOLDER_ROOT);
+	}
+
 	function shouldHideFolderInCurrentMode(path) {
-		return appState.baseMode === 'home' && isRssFolderPath(path);
+		if (appState.baseMode === 'home') {
+			return isRssFolderPath(path);
+		}
+		if (appState.baseMode === 'rss') {
+			return isRssArchiveFolderPath(path);
+		}
+		return false;
 	}
 
 	function ensureFolderFilterVisibleForCurrentMode() {
